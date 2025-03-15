@@ -15,27 +15,6 @@
 - 音频处理：Symphonia + CPAL
 - 数据库：SQLite
 
-### 目录结构
-```
-slahser_player/
-├── frontend/           # Flutter 前端项目
-│   ├── lib/
-│   │   ├── main.dart
-│   │   ├── pages/     # 页面组件
-│   │   ├── widgets/   # 可复用组件
-│   │   ├── models/    # 数据模型
-│   │   └── services/  # 服务层
-│   └── pubspec.yaml
-├── backend/           # Rust 后端项目
-│   ├── src/
-│   │   ├── main.rs
-│   │   ├── audio/     # 音频处理模块
-│   │   ├── metadata/  # 元数据解析
-│   │   └── db/        # 数据库操作
-│   └── Cargo.toml
-└── shared/           # 共享代码
-    └── protos/       # Protobuf 定义
-```
 
 ## 功能特性
 
