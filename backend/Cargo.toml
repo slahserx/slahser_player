@@ -1,0 +1,35 @@
+[package]
+name = "slahser_player_backend"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# 音频处理
+symphonia = { version = "0.5", features = ["mp3", "flac", "aac", "isomp4"] }
+cpal = "0.15"
+hound = "3.5"
+rodio = "0.17"
+
+# 文件系统
+walkdir = "2.4"
+notify = "6.1"
+
+# 数据库
+rusqlite = { version = "0.30", features = ["bundled"] }
+
+# 序列化
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+protobuf = "3.2"
+
+# 异步运行时
+tokio = { version = "1.36", features = ["full"] }
+
+# 工具库
+anyhow = "1.0"
+thiserror = "1.0"
+log = "0.4"
+env_logger = "0.11"
+
+[build-dependencies]
+tonic-build = "0.11"
