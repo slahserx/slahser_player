@@ -2,11 +2,12 @@
 
 一款本地音乐播放器，使用 Flutter + Rust 开发。
 
-##安装
+
+## 说明
+## 安装
 - [安装版 (.exe)](https://github.com/slahserx/slahser_player/releases/download/v0.8.0/slahser_player_setup_0.8.0.exe) - 推荐大多数用户使用
 - [便携版 (.zip)](https://github.com/slahserx/slahser_player/releases/download/v0.8.0/slahser_player_0.8.0_portable.zip) - 无需安装，解压即用
 
-## 项目架构
 
 ### 技术栈
 - 前端：Flutter (Windows Desktop)
