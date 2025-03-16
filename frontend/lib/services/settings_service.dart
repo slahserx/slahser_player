@@ -10,7 +10,9 @@ class SettingsService extends ChangeNotifier {
   static const String _settingsFileName = 'settings.json';
   
   // 当前设置
-  AppSettings _settings = AppSettings();
+  AppSettings _settings = AppSettings(
+    fontFamily: '微软雅黑',
+  );
   AppSettings get settings => _settings;
   
   // 可用字体列表

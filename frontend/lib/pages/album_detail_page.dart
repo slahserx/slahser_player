@@ -156,25 +156,31 @@ class _AlbumDetailPageState extends State<AlbumDetailPage> {
     }
 
     if (_firstSong!.coverPath != null && File(_firstSong!.coverPath!).existsSync()) {
-      return Image.file(
-        File(_firstSong!.coverPath!),
-        fit: BoxFit.cover,
-        gaplessPlayback: true,
+      return Hero(
+        tag: 'album-cover-${widget.album}',
+        child: Image.file(
+          File(_firstSong!.coverPath!),
+          fit: BoxFit.cover,
+          gaplessPlayback: true,
+        ),
       );
     } else if (_firstSong!.hasEmbeddedCover && _firstSong!.embeddedCoverBytes != null) {
-      return Image.memory(
-        Uint8List.fromList(_firstSong!.embeddedCoverBytes!),
-        fit: BoxFit.cover,
-        gaplessPlayback: true,
-        errorBuilder: (context, error, stackTrace) {
-          return Center(
-            child: Icon(
-              Icons.album,
-              size: 60,
-              color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.4),
-            ),
-          );
-        },
+      return Hero(
+        tag: 'album-cover-${widget.album}',
+        child: Image.memory(
+          Uint8List.fromList(_firstSong!.embeddedCoverBytes!),
+          fit: BoxFit.cover,
+          gaplessPlayback: true,
+          errorBuilder: (context, error, stackTrace) {
+            return Center(
+              child: Icon(
+                Icons.album,
+                size: 60,
+                color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.4),
+              ),
+            );
+          },
+        ),
       );
     } else {
       return Center(

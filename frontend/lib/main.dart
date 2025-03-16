@@ -80,12 +80,13 @@ class MyApp extends StatelessWidget {
     // 获取主题模式和颜色
     final settingsService = Provider.of<SettingsService>(context);
     final customColor = settingsService.currentThemeColor;
+    final fontFamily = settingsService.settings.fontFamily == 'System Default' ? null : settingsService.settings.fontFamily;
     
     return MaterialApp(
       title: 'Slahser Player',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.createLightTheme(primaryColor: customColor),
-      darkTheme: AppTheme.createDarkTheme(primaryColor: customColor),
+      theme: AppTheme.createLightTheme(primaryColor: customColor, fontFamily: fontFamily),
+      darkTheme: AppTheme.createDarkTheme(primaryColor: customColor, fontFamily: fontFamily),
       themeMode: settingsService.currentThemeMode,
       home: const HomePage(),
     );

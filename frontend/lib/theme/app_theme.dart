@@ -6,7 +6,7 @@ class AppTheme {
   static const _primaryColor = Color(0xFF5C6BC0); // 默认紫色调
   
   /// 创建浅色主题
-  static ThemeData createLightTheme({Color? primaryColor}) {
+  static ThemeData createLightTheme({Color? primaryColor, String? fontFamily}) {
     return ThemeData(
       brightness: Brightness.light,
       colorScheme: ColorScheme.fromSeed(
@@ -14,7 +14,7 @@ class AppTheme {
         brightness: Brightness.light,
       ),
       useMaterial3: true,
-      fontFamily: 'Microsoft YaHei',
+      fontFamily: fontFamily ?? '微软雅黑',
       scaffoldBackgroundColor: Colors.white,
       appBarTheme: const AppBarTheme(
         backgroundColor: Colors.white,
@@ -54,7 +54,7 @@ class AppTheme {
   }
   
   /// 创建深色主题
-  static ThemeData createDarkTheme({Color? primaryColor}) {
+  static ThemeData createDarkTheme({Color? primaryColor, String? fontFamily}) {
     return ThemeData(
       brightness: Brightness.dark,
       colorScheme: ColorScheme.fromSeed(
@@ -62,7 +62,7 @@ class AppTheme {
         brightness: Brightness.dark,
       ),
       useMaterial3: true,
-      fontFamily: 'Microsoft YaHei',
+      fontFamily: fontFamily ?? '微软雅黑',
       scaffoldBackgroundColor: const Color(0xFF1E1E1E),
       canvasColor: const Color(0xFF1E1E1E),
       cardTheme: CardTheme(

@@ -50,7 +50,7 @@ class AppSettings {
   AppSettings({
     this.themeMode = AppThemeMode.system,
     this.themeColor = ThemeColor.green,
-    this.fontFamily = '.SF Pro Display',
+    this.fontFamily = '微软雅黑',
     this.enableFadeEffect = true,
     this.fadeInDuration = 500,
     this.fadeOutDuration = 500,
@@ -79,7 +79,7 @@ class AppSettings {
     return AppSettings(
       themeMode: AppThemeMode.values[json['themeMode'] ?? 2],
       themeColor: ThemeColor.values[json['themeColor'] ?? 0],
-      fontFamily: json['fontFamily'] ?? '.SF Pro Display',
+      fontFamily: json['fontFamily'] ?? '微软雅黑',
       enableFadeEffect: json['enableFadeEffect'] ?? true,
       fadeInDuration: json['fadeInDuration'] ?? 500,
       fadeOutDuration: json['fadeOutDuration'] ?? 500,

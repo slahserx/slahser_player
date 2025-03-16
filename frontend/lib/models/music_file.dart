@@ -1045,6 +1045,17 @@ class MusicFile {
   
   // 从JSON创建MusicFile对象
   factory MusicFile.fromJson(Map<String, dynamic> json) {
+    // 尝试从Base64字符串恢复封面图片数据
+    List<int>? coverBytes;
+    if (json['embeddedCoverBytes'] != null) {
+      try {
+        coverBytes = base64Decode(json['embeddedCoverBytes']);
+        debugPrint('从JSON中恢复封面图片数据，大小: ${coverBytes.length} 字节');
+      } catch (e) {
+        debugPrint('解码封面图片数据失败: $e');
+      }
+    }
+    
     return MusicFile(
       id: json['id'] ?? const Uuid().v4(),
       filePath: json['filePath'] ?? '',
@@ -1065,28 +1076,40 @@ class MusicFile {
       isFavorite: json['isFavorite'] ?? false,
       playCount: json['playCount'] ?? 0,
       lastPlayed: json['lastPlayed'] != null ? DateTime.fromMillisecondsSinceEpoch(json['lastPlayed']) : null,
+      embeddedCoverBytes: coverBytes,
     );
   }
   
   // 转换为JSON
   Map<String, dynamic> toJson() {
     try {
-    return {
-      'id': id,
-      'filePath': filePath,
-      'fileName': fileName,
-      'fileExtension': fileExtension,
-      'title': title,
-      'artist': artist,
-      'album': album,
-      'lyricsPath': lyricsPath,
-      'coverPath': coverPath,
-      'durationInSeconds': duration.inSeconds,
+      // 将封面图片数据转换为Base64字符串
+      String? coverBase64;
+      if (embeddedCoverBytes != null && embeddedCoverBytes!.isNotEmpty) {
+        try {
+          coverBase64 = base64Encode(embeddedCoverBytes!);
+        } catch (e) {
+          debugPrint('编码封面图片数据失败: $e');
+        }
+      }
+      
+      return {
+        'id': id,
+        'filePath': filePath,
+        'fileName': fileName,
+        'fileExtension': fileExtension,
+        'title': title,
+        'artist': artist,
+        'album': album,
+        'lyricsPath': lyricsPath,
+        'coverPath': coverPath,
+        'durationInSeconds': duration.inSeconds,
         'trackNumber': trackNumber,
         'year': year,
         'genre': genre,
         'lastModified': lastModified?.millisecondsSinceEpoch,
         'fileSize': fileSize,
+        'embeddedCoverBytes': coverBase64,
         'hasEmbeddedCover': hasEmbeddedCover,
         'isFavorite': isFavorite,
         'playCount': playCount,
@@ -1142,4 +1165,16 @@ class MusicFile {
       lastPlayed: lastPlayed,
     );
   }
+  
+  // 覆盖重写equals
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    if (other is! MusicFile) return false;
+    return id == other.id;
+  }
+  
+  // 覆盖重写hashCode
+  @override
+  int get hashCode => id.hashCode;
 } 

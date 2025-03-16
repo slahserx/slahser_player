@@ -7,6 +7,7 @@ import 'package:slahser_player/models/music_file.dart';
 import 'package:slahser_player/services/audio_player_service.dart';
 import 'package:slahser_player/services/playlist_service.dart';
 import '../enums/playback_state.dart';
+import 'package:slahser_player/widgets/custom_snackbar.dart';
 
 class PlaylistView extends StatefulWidget {
   final Playlist playlist;
@@ -340,9 +341,7 @@ class _PlaylistViewState extends State<PlaylistView> {
     
     // 从歌单中移除
     playlistService.removeSongFromPlaylist(widget.playlist.id, music);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('已从歌单"${widget.playlist.name}"中移除')),
-    );
+    CustomSnackBar.showSuccess(context, '已从歌单"${widget.playlist.name}"中移除');
   }
 
   // 显示歌曲操作选项
@@ -422,9 +421,7 @@ class _PlaylistViewState extends State<PlaylistView> {
                     Navigator.pop(context);
                     if (!alreadyInPlaylist) {
                       playlistService.addSongToPlaylist(playlist.id, music.copy());
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('已添加到歌单"${playlist.name}"')),
-                      );
+                      CustomSnackBar.showSuccess(context, '已添加到歌单"${playlist.name}"');
                     }
                   },
                 );
@@ -484,9 +481,7 @@ class _PlaylistViewState extends State<PlaylistView> {
                   await playlistService.addSongToPlaylist(playlist.id, music.copy());
                   if (context.mounted) {
                     Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('已添加到新歌单"${playlist.name}"')),
-                    );
+                    CustomSnackBar.showSuccess(context, '已添加到新歌单"${playlist.name}"');
                   }
                 }
               },
@@ -547,9 +542,7 @@ class _PlaylistViewState extends State<PlaylistView> {
                 final description = descriptionController.text.trim();
                 
                 if (name.isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('歌单名称不能为空')),
-                  );
+                  CustomSnackBar.showWarning(context, '歌单名称不能为空');
                   return;
                 }
                 

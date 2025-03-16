@@ -288,7 +288,7 @@ class AudioPlayerService extends ChangeNotifier {
       // 更新状态为加载中
       _playbackState.add(PlaybackState.loading);
       
-      debugPrint('准备播放音乐: ${music.title}');
+      debugPrint('准备播放音乐: ${music.title}, ID: ${music.id}');
       
       // 停止当前播放
       await _audioPlayer.stop().catchError((error) {
@@ -332,7 +332,7 @@ class AudioPlayerService extends ChangeNotifier {
       
       // 开始播放
       try {
-        debugPrint('尝试播放: ${music.title}');
+        debugPrint('尝试播放: ${music.title}, ID: ${music.id}');
         await _audioPlayer.play().catchError((error) {
           // 忽略BufferingProgress错误
           if (error.toString().contains('BufferingProgress')) {
@@ -343,7 +343,7 @@ class AudioPlayerService extends ChangeNotifier {
         });
           
         // 成功播放后，明确设置为播放状态
-        debugPrint('开始播放: ${music.title}');
+        debugPrint('开始播放: ${music.title}, ID: ${music.id}');
         _playbackState.add(PlaybackState.playing);
       } catch (e) {
         if (e.toString().contains('BufferingProgress')) {

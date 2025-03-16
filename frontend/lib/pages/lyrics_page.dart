@@ -9,6 +9,30 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+// 鼠标悬停检测组件
+class HoverWidget extends StatefulWidget {
+  final Widget Function(BuildContext, bool isHovered) builder;
+  
+  const HoverWidget({super.key, required this.builder});
+  
+  @override
+  State<HoverWidget> createState() => _HoverWidgetState();
+}
+
+class _HoverWidgetState extends State<HoverWidget> {
+  bool isHovered = false;
+  
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => isHovered = true),
+      onExit: (_) => setState(() => isHovered = false),
+      child: widget.builder(context, isHovered),
+    );
+  }
+}
+
 class LyricsPage extends StatefulWidget {
   final MusicFile music;
 
@@ -555,32 +579,44 @@ class _LyricsPageState extends State<LyricsPage> {
         itemBuilder: (context, index) {
           final isCurrentLine = index == _currentLineIndex;
           
-          return MouseRegion(
-            cursor: SystemMouseCursors.click,
-            child: GestureDetector(
-              onTap: () => _seekToLyricLine(index),
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                margin: const EdgeInsets.symmetric(vertical: 4),
-                decoration: BoxDecoration(
-                  color: isCurrentLine 
-                      ? Theme.of(context).colorScheme.primary.withOpacity(0.1)
-                      : Colors.transparent,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  _lyrics[index].text,
-                  style: TextStyle(
-                    fontSize: _fontSize,
-                    fontWeight: isCurrentLine ? FontWeight.bold : FontWeight.normal,
+          return HoverWidget(
+            builder: (context, isHovered) {
+              return GestureDetector(
+                onTap: () => _seekToLyricLine(index),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  margin: const EdgeInsets.symmetric(vertical: 4),
+                  decoration: BoxDecoration(
                     color: isCurrentLine 
-                        ? Theme.of(context).colorScheme.primary
-                        : Theme.of(context).colorScheme.onBackground.withOpacity(0.8),
+                        ? Theme.of(context).colorScheme.primary.withOpacity(0.1)
+                        : isHovered
+                            ? Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3)
+                            : Colors.transparent,
+                    borderRadius: BorderRadius.circular(8),
                   ),
-                  textAlign: TextAlign.center,
+                  child: AnimatedDefaultTextStyle(
+                    duration: const Duration(milliseconds: 150),
+                    style: TextStyle(
+                      fontSize: isHovered ? _fontSize + 2 : _fontSize,
+                      fontWeight: isCurrentLine || isHovered ? FontWeight.bold : FontWeight.normal,
+                      color: isCurrentLine 
+                          ? Theme.of(context).colorScheme.primary
+                          : isHovered
+                              ? Theme.of(context).colorScheme.onBackground
+                              : Theme.of(context).colorScheme.onBackground.withOpacity(0.8),
+                      letterSpacing: isHovered ? 0.5 : 0,
+                      fontFamily: Theme.of(context).textTheme.bodyLarge?.fontFamily,
+                    ),
+                    textAlign: TextAlign.center,
+                    child: Text(
+                      _lyrics[index].text,
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
                 ),
-              ),
-            ),
+              );
+            },
           );
         },
       ),
