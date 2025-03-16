@@ -8,9 +8,7 @@ import 'package:slahser_player/services/music_library_service.dart';
 import 'package:slahser_player/services/audio_player_service.dart';
 import 'package:slahser_player/services/settings_service.dart';
 import 'package:slahser_player/services/playlist_service.dart';
-
-// 全局键，用于访问ContentArea的状态
-final GlobalKey<ContentAreaState> contentAreaKey = GlobalKey<ContentAreaState>();
+import 'package:slahser_player/enums/content_type.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -20,20 +18,24 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> with WindowListener {
+  // 存储当前选中的内容类型
   ContentType _selectedContentType = ContentType.allMusic;
-  String? _selectedPlaylistId;
   
+  // 存储当前选中的歌单ID
+  String? _selectedPlaylistId;
+
   @override
   void initState() {
     super.initState();
     windowManager.addListener(this);
+    _initWindowManager();
     
     // 初始化服务
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final musicLibraryService = Provider.of<MusicLibraryService>(context, listen: false);
       
       // 加载音乐库
-      musicLibraryService.loadLibrary();
+      await musicLibraryService.loadLibrary();
     });
   }
   
@@ -43,31 +45,35 @@ class _HomePageState extends State<HomePage> with WindowListener {
     super.dispose();
   }
   
+  // 初始化窗口管理器
+  Future<void> _initWindowManager() async {
+    await windowManager.ensureInitialized();
+    await windowManager.setMinimumSize(const Size(800, 600));
+    await windowManager.center();
+    await windowManager.show();
+  }
+
   @override
   void onWindowClose() async {
-    bool isPreventClose = await windowManager.isPreventClose();
-    if (isPreventClose) {
-      await windowManager.destroy();
-    }
+    // 不使用Provider.of<T>(context)，改为手动清理资源
+    await windowManager.destroy();
   }
 
   void _handleContentTypeSelected(ContentType contentType) {
     setState(() {
       _selectedContentType = contentType;
       // 如果切换到了非歌单详情页面，清空选中的歌单ID
-      if (contentType != ContentType.playlistDetail) {
+      if (contentType != ContentType.playlist) {
         _selectedPlaylistId = null;
       }
     });
-    contentAreaKey.currentState?.showContent(contentType);
   }
 
-  void _handlePlaylistSelected(ContentType contentType, {String? playlistId}) {
+  void _handlePlaylistSelected(String playlistId) {
     setState(() {
-      _selectedContentType = contentType;
+      _selectedContentType = ContentType.playlist;
       _selectedPlaylistId = playlistId;
     });
-    contentAreaKey.currentState?.showContent(contentType, playlistId: playlistId);
   }
 
   @override
@@ -141,9 +147,20 @@ class _HomePageState extends State<HomePage> with WindowListener {
                       ),
                       // 内容区域
                       Expanded(
-                        child: ContentArea(
-                          key: contentAreaKey,
-                          contentType: _selectedContentType,
+                        child: NotificationListener<PlaylistSelectedNotification>(
+                          onNotification: (notification) {
+                            // 处理歌单选择通知
+                            _handlePlaylistSelected(notification.playlistId);
+                            return true; // 阻止通知继续冒泡
+                          },
+                          child: AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 300),
+                            child: ContentArea(
+                              key: ValueKey<ContentType>(_selectedContentType),
+                              selectedContentType: _selectedContentType,
+                              selectedPlaylistId: _selectedPlaylistId,
+                            ),
+                          ),
                         ),
                       ),
                     ],

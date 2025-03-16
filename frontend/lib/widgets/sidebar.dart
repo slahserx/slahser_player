@@ -2,11 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:slahser_player/models/playlist.dart';
 import 'package:slahser_player/services/playlist_service.dart';
-import 'package:slahser_player/widgets/content_area.dart';
+import 'package:slahser_player/enums/content_type.dart';
+
+// 检查是否是需要隐藏的系统歌单
+bool isSystemPlaylistHidden(Playlist playlist) {
+  // 这里可以添加自定义的过滤逻辑
+  // 例如，可以判断特定的歌单名称或ID
+  // 当前只过滤掉默认歌单，因为它已经在固定菜单中
+  return playlist.isDefault;
+}
 
 class Sidebar extends StatefulWidget {
   final Function(ContentType) onContentTypeSelected;
-  final Function(ContentType, {String? playlistId}) onPlaylistSelected;
+  final Function(String) onPlaylistSelected;
   final ContentType selectedContentType;
   final String? selectedPlaylistId;
 
@@ -128,7 +136,7 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
           ),
           
           // 歌单列表
-          if (!_isCollapsed) _buildPlaylistItems(context),
+          if (!_isCollapsed) _buildPlaylistsList(context),
           
           const Spacer(),
           
@@ -163,7 +171,7 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
   }) {
     final isSelected = widget.selectedContentType == contentType ||
         (contentType == ContentType.playlists && 
-         widget.selectedContentType == ContentType.playlistDetail);
+         widget.selectedContentType == ContentType.playlist);
     
     return InkWell(
       onTap: () {
@@ -248,88 +256,77 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
     );
   }
 
-  Widget _buildPlaylistItems(BuildContext context) {
-    // 如果不是在歌单列表页面或歌单详情页面，就不显示歌单
-    if (widget.selectedContentType != ContentType.playlists && 
-        widget.selectedContentType != ContentType.playlistDetail) {
-      return const SizedBox.shrink();
-    }
-    
+  Widget _buildPlaylistsList(BuildContext context) {
     return Consumer<PlaylistService>(
       builder: (context, playlistService, child) {
-        final playlists = playlistService.playlists;
-        // 过滤掉我喜欢的音乐歌单(它已经在上面的固定菜单中)
-        final filteredPlaylists = playlists.where((p) => !p.isDefault).toList();
+        List<Playlist> playlists = playlistService.playlists;
+        
+        // 如果不是在歌单列表页面或歌单详情页面，就不显示歌单
+        if (widget.selectedContentType != ContentType.playlists && 
+           widget.selectedContentType != ContentType.playlist) {
+          return const SizedBox.shrink();
+        }
+        
+        // 过滤掉需要隐藏的系统歌单
+        List<Playlist> filteredPlaylists = playlists.where((playlist) {
+          return !isSystemPlaylistHidden(playlist);
+        }).toList();
         
         if (filteredPlaylists.isEmpty) {
-          return Padding(
-            padding: const EdgeInsets.only(
-              left: 44,
-              top: 8,
-              bottom: 8,
-            ),
-            child: Text(
-              '暂无自定义歌单',
-              style: TextStyle(
-                fontSize: 12,
-                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
-              ),
-            ),
-          );
+          return const SizedBox.shrink();
         }
         
         return Column(
           children: filteredPlaylists.map((playlist) {
-            final isSelected = widget.selectedContentType == ContentType.playlistDetail && 
+            final isSelected = widget.selectedContentType == ContentType.playlist && 
                               widget.selectedPlaylistId == playlist.id;
             
             return InkWell(
               onTap: () {
-                widget.onPlaylistSelected(ContentType.playlistDetail, playlistId: playlist.id);
+                widget.onPlaylistSelected(playlist.id);
               },
               hoverColor: Theme.of(context).colorScheme.primary.withOpacity(0.08),
-              borderRadius: BorderRadius.circular(8),
               child: Container(
-                height: 40,
-                margin: const EdgeInsets.only(
-                  left: 24,
-                  right: 8,
-                  top: 2,
-                  bottom: 2,
+                padding: EdgeInsets.symmetric(
+                  horizontal: _isCollapsed ? 8 : 16,
+                  vertical: 6,
                 ),
                 decoration: BoxDecoration(
-                  color: isSelected
-                      ? Theme.of(context).colorScheme.primary.withOpacity(0.1)
+                  color: isSelected 
+                      ? Theme.of(context).colorScheme.primary.withOpacity(0.12)
                       : Colors.transparent,
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Row(
-                    children: [
-                      Icon(
+                child: Row(
+                  children: [
+                    Container(
+                      width: 24,
+                      height: 24,
+                      alignment: Alignment.center,
+                      child: Icon(
                         Icons.queue_music,
                         size: 16,
                         color: isSelected
                             ? Theme.of(context).colorScheme.primary
                             : Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
                       ),
+                    ),
+                    if (!_isCollapsed) ...[
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           playlist.name,
-                          overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            fontSize: 13,
                             color: isSelected
                                 ? Theme.of(context).colorScheme.primary
                                 : Theme.of(context).colorScheme.onSurface,
-                            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                            fontWeight: isSelected ? FontWeight.bold : null,
                           ),
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ],
-                  ),
+                  ],
                 ),
               ),
             );

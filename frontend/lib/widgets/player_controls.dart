@@ -4,6 +4,7 @@ import 'package:slahser_player/services/audio_player_service.dart';
 import 'package:slahser_player/pages/lyrics_page.dart';
 import 'package:slahser_player/models/music_file.dart';
 import 'package:slahser_player/widgets/equalizer_dialog.dart';
+import 'package:slahser_player/utils/page_transitions.dart';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
@@ -402,8 +403,8 @@ class PlayerControls extends StatelessWidget {
   void _navigateToLyricsPage(BuildContext context, MusicFile music) {
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (context) => LyricsPage(music: music),
+      LyricsPageTransition(
+        page: LyricsPage(music: music),
       ),
     );
   }

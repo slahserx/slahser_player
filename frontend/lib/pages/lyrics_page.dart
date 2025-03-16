@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:slahser_player/services/audio_player_service.dart';
 import 'package:slahser_player/models/music_file.dart';
+import 'package:slahser_player/utils/page_transitions.dart';
 import '../enums/playback_state.dart';
 import 'dart:io';
 import 'dart:async';
@@ -224,12 +225,20 @@ class _LyricsPageState extends State<LyricsPage> {
                             message: '返回',
                             child: InkWell(
                               onTap: () {
-                                Navigator.pop(context);
+                                Navigator.of(context).pop();
                               },
                               borderRadius: BorderRadius.circular(20),
-                              child: Container(
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 200),
                                 padding: const EdgeInsets.all(8),
-                                child: const Icon(Icons.arrow_back),
+                                decoration: BoxDecoration(
+                                  color: Theme.of(context).colorScheme.surface.withOpacity(0.2),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: const Icon(
+                                  Icons.arrow_back,
+                                  size: 24,
+                                ),
                               ),
                             ),
                           ),
@@ -426,13 +435,13 @@ class _LyricsPageState extends State<LyricsPage> {
                 onPressed: () {
                   audioPlayer.previous();
                   // 如果切换了歌曲，需要关闭当前页面并打开新歌曲的歌词页面
-                  if (audioPlayer.currentMusic?.id != music.id) {
+                  if (audioPlayer.currentMusic?.id != widget.music.id) {
                     Navigator.pop(context);
                     if (audioPlayer.currentMusic != null) {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(
-                          builder: (context) => LyricsPage(music: audioPlayer.currentMusic!),
+                        LyricsPageTransition(
+                          page: LyricsPage(music: audioPlayer.currentMusic!),
                         ),
                       );
                     }
@@ -458,13 +467,13 @@ class _LyricsPageState extends State<LyricsPage> {
                 onPressed: () {
                   audioPlayer.next();
                   // 如果切换了歌曲，需要关闭当前页面并打开新歌曲的歌词页面
-                  if (audioPlayer.currentMusic?.id != music.id) {
+                  if (audioPlayer.currentMusic?.id != widget.music.id) {
                     Navigator.pop(context);
                     if (audioPlayer.currentMusic != null) {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(
-                          builder: (context) => LyricsPage(music: audioPlayer.currentMusic!),
+                        LyricsPageTransition(
+                          page: LyricsPage(music: audioPlayer.currentMusic!),
                         ),
                       );
                     }

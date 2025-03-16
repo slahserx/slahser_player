@@ -10,269 +10,119 @@ import 'package:slahser_player/widgets/playlist_view.dart';
 import 'dart:io';
 import '../enums/playback_state.dart';
 import 'dart:typed_data';
+import 'package:slahser_player/utils/page_transitions.dart';
+import '../enums/content_type.dart';
 
-// 内容类型枚举
-enum ContentType {
-  allMusic,     // 所有音乐
-  favoriteMusic, // 我喜欢的音乐
-  playlists,    // 歌单列表
-  playlistDetail, // 歌单详情
-  settings,     // 设置
-}
-
-class ContentArea extends StatefulWidget {
-  final ContentType contentType;
-
-  const ContentArea({super.key, required this.contentType});
-
-  @override
-  State<ContentArea> createState() => ContentAreaState();
-}
-
-class ContentAreaState extends State<ContentArea> {
-  late ContentType _contentType;
-  String? _selectedPlaylistId; // 当前选中的歌单ID
+// 定义一个自定义通知，用于告诉HomePage切换到特定歌单
+class PlaylistSelectedNotification extends Notification {
+  final String playlistId;
   
+  PlaylistSelectedNotification(this.playlistId);
+}
+
+/// 应用程序的主要内容区域
+class ContentArea extends StatefulWidget {
+  /// 当前选择的内容类型
+  final ContentType selectedContentType;
+  
+  /// 当前选择的播放列表ID（可选）
+  final String? selectedPlaylistId;
+  
+  const ContentArea({
+    super.key,
+    required this.selectedContentType,
+    this.selectedPlaylistId,
+  });
+  
+  @override
+  State<ContentArea> createState() => _ContentAreaState();
+}
+
+class _ContentAreaState extends State<ContentArea> {
   // 排序相关的状态
   String _sortField = 'title'; // 默认按标题排序
   bool _sortAscending = true; // 默认升序排序
-
-  @override
-  void initState() {
-    super.initState();
-    _contentType = widget.contentType;
-  }
-
-  void showContent(ContentType contentType, {String? playlistId}) {
-    setState(() {
-      _contentType = contentType;
-      if (playlistId != null) {
-        _selectedPlaylistId = playlistId;
-      } else if (contentType != ContentType.playlistDetail) {
-        _selectedPlaylistId = null;
-      }
-    });
-  }
-
+  
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        border: Border(
-          bottom: BorderSide(
-            color: Theme.of(context).dividerColor.withOpacity(0.1),
-          ),
-        ),
-      ),
-      child: _buildContent(),
-    );
-  }
-
-  Widget _buildContent() {
-    switch (_contentType) {
-      case ContentType.settings:
-        return const SettingsPanel();
-        
-      case ContentType.favoriteMusic:
-        return Consumer<PlaylistService>(
-          builder: (context, playlistService, child) {
-            final favoritePlaylist = playlistService.getFavoritesPlaylist();
-            return PlaylistView(playlist: favoritePlaylist);
-          },
-        );
-        
-      case ContentType.playlists:
-        return _buildPlaylistsContent();
-        
-      case ContentType.playlistDetail:
-        if (_selectedPlaylistId != null) {
-          return Consumer<PlaylistService>(
-            builder: (context, playlistService, child) {
-              final playlist = playlistService.getPlaylist(_selectedPlaylistId!);
-              if (playlist == null) {
-                return const Center(child: Text('歌单不存在'));
-              }
-              return PlaylistView(playlist: playlist);
-            },
-          );
-        }
-        return const Center(child: Text('未选中歌单'));
-        
-      case ContentType.allMusic:
-      default:
-        return _buildMusicContent();
-    }
-  }
-
-  // 构建歌单列表内容
-  Widget _buildPlaylistsContent() {
-    return Consumer<PlaylistService>(
-      builder: (context, playlistService, child) {
-        final playlists = playlistService.playlists;
-        
-        return Column(
-          children: [
-            // 页面标题和操作按钮
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  Text(
-                    '我的歌单',
-                    style: Theme.of(context).textTheme.headlineSmall,
-                  ),
-                  const Spacer(),
-                  ElevatedButton.icon(
-                    icon: const Icon(Icons.add),
-                    label: const Text('新建歌单'),
-                    onPressed: () {
-                      _showCreatePlaylistDialog(context, playlistService);
-                    },
-                  ),
-                ],
-              ),
-            ),
-            
-            // 歌单列表
-            Expanded(
-              child: playlists.isEmpty
-                  ? const Center(child: Text('暂无歌单，点击"新建歌单"创建一个吧！'))
-                  : GridView.builder(
-                      padding: const EdgeInsets.all(16),
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 4,
-                        childAspectRatio: 0.8,
-                        crossAxisSpacing: 16,
-                        mainAxisSpacing: 16,
-                      ),
-                      itemCount: playlists.length,
-                      itemBuilder: (context, index) {
-                        final playlist = playlists[index];
-                        return _buildPlaylistCard(context, playlist);
-                      },
-                    ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  // 构建歌单卡片
-  Widget _buildPlaylistCard(BuildContext context, Playlist playlist) {
-    return InkWell(
-      onTap: () {
-        showContent(ContentType.playlistDetail, playlistId: playlist.id);
-      },
-      borderRadius: BorderRadius.circular(8),
-      child: Card(
-        clipBehavior: Clip.antiAlias,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 歌单封面
-            Expanded(
-              child: Container(
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surfaceVariant,
-                  image: playlist.getCoverImage() != null
-                      ? DecorationImage(
-                          image: FileImage(File(playlist.getCoverImage()!)),
-                          fit: BoxFit.cover,
-                        )
-                      : null,
-                ),
-                child: playlist.getCoverImage() == null
-                    ? Center(
-                        child: Icon(
-                          Icons.music_note,
-                          size: 64,
-                          color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.6),
-                        ),
-                      )
-                    : null,
-              ),
-            ),
-            // 歌单信息
-            Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    playlist.name,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${playlist.songs.length}首歌',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
-                        ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // 显示创建歌单对话框
-  void _showCreatePlaylistDialog(BuildContext context, PlaylistService playlistService) {
-    final TextEditingController controller = TextEditingController();
+    // 根据选择的内容类型显示不同的内容
+    Widget content;
     
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('新建歌单'),
-          content: TextField(
-            controller: controller,
-            autofocus: true,
-            decoration: const InputDecoration(
-              labelText: '歌单名称',
-              hintText: '请输入歌单名称',
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-              },
-              child: const Text('取消'),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                final name = controller.text.trim();
-                if (name.isNotEmpty) {
-                  final playlist = await playlistService.createPlaylist(name);
-                  if (context.mounted) {
-                    Navigator.pop(context);
-                    // 创建后直接显示歌单详情
-                    showContent(ContentType.playlistDetail, playlistId: playlist.id);
-                  }
-                }
-              },
-              child: const Text('创建'),
-            ),
-          ],
+    switch (widget.selectedContentType) {
+      case ContentType.allMusic:
+        content = ContentAreaTransition(
+          appearing: true,
+          child: _buildAllMusicView(context),
         );
-      },
+        break;
+      case ContentType.favoriteMusic:
+        final playlistService = Provider.of<PlaylistService>(context);
+        final defaultPlaylist = playlistService.getFavoritesPlaylist();
+        content = ContentAreaTransition(
+          appearing: true,
+          child: PlaylistView(playlist: defaultPlaylist),
+        );
+        break;
+      case ContentType.playlists:
+        content = ContentAreaTransition(
+          appearing: true,
+          child: _buildPlaylistsView(context),
+        );
+        break;
+      case ContentType.playlist:
+        final playlistService = Provider.of<PlaylistService>(context);
+        
+        // 如果没有选择播放列表ID，显示默认的我喜欢的音乐
+        if (widget.selectedPlaylistId == null) {
+          final defaultPlaylist = playlistService.getFavoritesPlaylist();
+          content = ContentAreaTransition(
+            appearing: true,
+            child: PlaylistView(playlist: defaultPlaylist),
+          );
+        } else {
+          // 获取选择的播放列表
+          final playlist = playlistService.getPlaylist(widget.selectedPlaylistId!);
+          
+          if (playlist != null) {
+            content = ContentAreaTransition(
+              appearing: true,
+              child: PlaylistView(playlist: playlist),
+            );
+          } else {
+            // 播放列表不存在，显示错误消息
+            content = Center(
+              child: Text(
+                '未找到播放列表',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+              ),
+            );
+          }
+        }
+        break;
+      case ContentType.settings:
+        content = ContentAreaTransition(
+          appearing: true,
+          child: const SettingsPanel(),
+        );
+        break;
+      default:
+        // 默认显示所有音乐
+        content = ContentAreaTransition(
+          appearing: true,
+          child: _buildAllMusicView(context),
+        );
+    }
+    
+    // 添加背景颜色
+    return Container(
+      color: Theme.of(context).colorScheme.surface,
+      child: content,
     );
   }
 
-  Widget _buildMusicContent() {
+  Widget _buildAllMusicView(BuildContext context) {
     return Column(
       children: [
         // 搜索栏和导入按钮
@@ -773,7 +623,7 @@ class ContentAreaState extends State<ContentArea> {
     final musicLibrary = Provider.of<MusicLibraryService>(context, listen: false);
     
     // 获取当前内容类型
-    final contentType = widget.contentType;
+    final contentType = widget.selectedContentType;
     
     if (contentType == ContentType.allMusic) {
       // 在所有歌曲视图中，将所有歌曲添加到播放列表
@@ -1039,6 +889,172 @@ class ContentAreaState extends State<ContentArea> {
               : Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.6),
         ),
       ),
+    );
+  }
+
+  // 构建歌单列表内容
+  Widget _buildPlaylistsView(BuildContext context) {
+    return Consumer<PlaylistService>(
+      builder: (context, playlistService, child) {
+        final playlists = playlistService.playlists;
+        
+        return Column(
+          children: [
+            // 页面标题和操作按钮
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Text(
+                    '我的歌单',
+                    style: Theme.of(context).textTheme.headlineSmall,
+                  ),
+                  const Spacer(),
+                  ElevatedButton.icon(
+                    icon: const Icon(Icons.add),
+                    label: const Text('新建歌单'),
+                    onPressed: () {
+                      _showCreatePlaylistDialog(context, playlistService);
+                    },
+                  ),
+                ],
+              ),
+            ),
+            
+            // 歌单列表
+            Expanded(
+              child: playlists.isEmpty
+                  ? const Center(child: Text('暂无歌单，点击"新建歌单"创建一个吧！'))
+                  : GridView.builder(
+                      padding: const EdgeInsets.all(16),
+                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 4,
+                        childAspectRatio: 0.8,
+                        crossAxisSpacing: 16,
+                        mainAxisSpacing: 16,
+                      ),
+                      itemCount: playlists.length,
+                      itemBuilder: (context, index) {
+                        final playlist = playlists[index];
+                        return _buildPlaylistCard(context, playlist);
+                      },
+                    ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+  
+  // 构建歌单卡片
+  Widget _buildPlaylistCard(BuildContext context, Playlist playlist) {
+    return InkWell(
+      onTap: () {
+        // 发送通知，通知HomePage切换到特定歌单
+        PlaylistSelectedNotification(playlist.id).dispatch(context);
+      },
+      borderRadius: BorderRadius.circular(8),
+      child: Card(
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 歌单封面
+            Expanded(
+              child: Container(
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surfaceVariant,
+                  image: playlist.getCoverImage() != null
+                      ? DecorationImage(
+                          image: FileImage(File(playlist.getCoverImage()!)),
+                          fit: BoxFit.cover,
+                        )
+                      : null,
+                ),
+                child: playlist.getCoverImage() == null
+                    ? Center(
+                        child: Icon(
+                          Icons.music_note,
+                          size: 64,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.6),
+                        ),
+                      )
+                    : null,
+              ),
+            ),
+            // 歌单信息
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    playlist.name,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${playlist.songs.length}首歌',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                        ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+  
+  // 显示创建歌单对话框
+  void _showCreatePlaylistDialog(BuildContext context, PlaylistService playlistService) {
+    final TextEditingController controller = TextEditingController();
+    
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('新建歌单'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            decoration: const InputDecoration(
+              labelText: '歌单名称',
+              hintText: '请输入歌单名称',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+              },
+              child: const Text('取消'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final name = controller.text.trim();
+                if (name.isNotEmpty) {
+                  await playlistService.createPlaylist(name);
+                  if (context.mounted) {
+                    Navigator.pop(context);
+                  }
+                }
+              },
+              child: const Text('创建'),
+            ),
+          ],
+        );
+      },
     );
   }
 } 
