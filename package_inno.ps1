@@ -18,7 +18,7 @@ if (-not (Test-Path "$buildDir\frontend.exe")) {
 
 # Create portable ZIP package
 Write-Host "1. Creating portable ZIP package..." -ForegroundColor Yellow
-$portableZip = ".\release\slahser_player_0.8.4_portable.zip"
+$portableZip = ".\release\slahser_player_0.9.0_portable.zip"
 if (Test-Path $portableZip) {
     Remove-Item -Path $portableZip -Force
 }
@@ -35,21 +35,21 @@ if (-not (Test-Path $innoSetupCompiler)) {
 }
 
 & $innoSetupCompiler "installer.iss"
-Write-Host "  Installer created: .\release\slahser_player_setup_0.8.4.exe" -ForegroundColor Green
+Write-Host "  Installer created: .\release\slahser_player_setup_0.9.0.exe" -ForegroundColor Green
 
 # Update readme file in release folder
 Write-Host "3. Updating installation instructions..." -ForegroundColor Yellow
 $readmeContent = @"
-# Slahser Player 0.8.4 Installation Guide
+# Slahser Player 0.9.0 Installation Guide
 
 ## Download Options
 
-1. **Installer Version** (slahser_player_setup_0.8.4.exe): Standard Windows installer
+1. **Installer Version** (slahser_player_setup_0.9.0.exe): Standard Windows installer
    - Recommended for most users
    - Automatically creates Start Menu and desktop shortcuts
    - Can be uninstalled via Control Panel
 
-2. **Portable Version** (slahser_player_0.8.4_portable.zip): No installation required
+2. **Portable Version** (slahser_player_0.9.0_portable.zip): No installation required
    - Extract and use
    - Perfect for USB drives or users who prefer not to install
 
@@ -57,13 +57,13 @@ $readmeContent = @"
 
 ### Installer Version
 
-1. Double-click the downloaded `slahser_player_setup_0.8.4.exe` file
+1. Double-click the downloaded `slahser_player_setup_0.9.0.exe` file
 2. Follow the installation wizard instructions
 3. After installation, launch the app from the Start Menu or desktop shortcut
 
 ### Portable Version
 
-1. Download `slahser_player_0.8.4_portable.zip`
+1. Download `slahser_player_0.9.0_portable.zip`
 2. Extract to any folder
 3. Double-click `frontend.exe` to launch the application
 
@@ -83,6 +83,6 @@ Write-Host "  Installation guide updated" -ForegroundColor Green
 # Done
 Write-Host "`nPackaging completed!" -ForegroundColor Green
 Write-Host "All files saved to 'release' directory:" -ForegroundColor Green
-Write-Host "  - slahser_player_setup_0.8.4.exe (Installer)" -ForegroundColor Green
-Write-Host "  - slahser_player_0.8.4_portable.zip (Portable Version)" -ForegroundColor Green
+Write-Host "  - slahser_player_setup_0.9.0.exe (Installer)" -ForegroundColor Green
+Write-Host "  - slahser_player_0.9.0_portable.zip (Portable Version)" -ForegroundColor Green
 Write-Host "  - install_readme.md (Installation Guide)" -ForegroundColor Green 

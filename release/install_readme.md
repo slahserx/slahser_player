@@ -1,13 +1,13 @@
-﻿# Slahser Player 0.8.4 Installation Guide
+﻿# Slahser Player 0.9.0 Installation Guide
 
 ## Download Options
 
-1. **Installer Version** (slahser_player_setup_0.8.4.exe): Standard Windows installer
+1. **Installer Version** (slahser_player_setup_0.9.0.exe): Standard Windows installer
    - Recommended for most users
    - Automatically creates Start Menu and desktop shortcuts
    - Can be uninstalled via Control Panel
 
-2. **Portable Version** (slahser_player_0.8.4_portable.zip): No installation required
+2. **Portable Version** (slahser_player_0.9.0_portable.zip): No installation required
    - Extract and use
    - Perfect for USB drives or users who prefer not to install
 
@@ -15,13 +15,13 @@
 
 ### Installer Version
 
-1. Double-click the downloaded slahser_player_setup_0.8.4.exe file
+1. Double-click the downloaded slahser_player_setup_0.9.0.exe file
 2. Follow the installation wizard instructions
 3. After installation, launch the app from the Start Menu or desktop shortcut
 
 ### Portable Version
 
-1. Download slahser_player_0.8.4_portable.zip
+1. Download slahser_player_0.9.0_portable.zip
 2. Extract to any folder
 3. Double-click rontend.exe to launch the application
 
