@@ -33,6 +33,8 @@ class Sidebar extends StatefulWidget {
 class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
   // 是否折叠侧边栏
   bool _isCollapsed = false;
+  // 是否展开歌单列表
+  bool _isPlaylistExpanded = false;
   late AnimationController _animationController;
   late Animation<double> _animation;
 
@@ -175,6 +177,12 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
     
     return InkWell(
       onTap: () {
+        // 如果点击的是歌单按钮，切换歌单列表的展开状态
+        if (contentType == ContentType.playlists) {
+          setState(() {
+            _isPlaylistExpanded = !_isPlaylistExpanded;
+          });
+        }
         widget.onContentTypeSelected(contentType);
       },
       hoverColor: Theme.of(context).colorScheme.primary.withOpacity(0.15),
@@ -222,7 +230,7 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
                 const Spacer(),
                 if (showExpand && contentType == ContentType.playlists)
                   Icon(
-                    (widget.selectedContentType == ContentType.playlists)
+                    _isPlaylistExpanded
                         ? Icons.expand_less
                         : Icons.expand_more,
                     size: 20,
@@ -257,15 +265,14 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
   }
 
   Widget _buildPlaylistsList(BuildContext context) {
+    // 如果歌单列表未展开，则不显示
+    if (!_isPlaylistExpanded) {
+      return const SizedBox.shrink();
+    }
+    
     return Consumer<PlaylistService>(
       builder: (context, playlistService, child) {
         List<Playlist> playlists = playlistService.playlists;
-        
-        // 如果不是在歌单列表页面或歌单详情页面，就不显示歌单
-        if (widget.selectedContentType != ContentType.playlists && 
-           widget.selectedContentType != ContentType.playlist) {
-          return const SizedBox.shrink();
-        }
         
         // 过滤掉需要隐藏的系统歌单
         List<Playlist> filteredPlaylists = playlists.where((playlist) {
@@ -291,6 +298,9 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
                   horizontal: _isCollapsed ? 8 : 16,
                   vertical: 6,
                 ),
+                margin: const EdgeInsets.only(left: 16),
+                width: _isCollapsed ? 40 : 170,
+                height: 36,
                 decoration: BoxDecoration(
                   color: isSelected 
                       ? Theme.of(context).colorScheme.primary.withOpacity(0.12)
