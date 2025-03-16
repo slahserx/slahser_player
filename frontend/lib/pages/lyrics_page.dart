@@ -8,6 +8,7 @@ import 'dart:io';
 import 'dart:async';
 import 'dart:math' as math;
 import 'dart:typed_data';
+import 'package:slahser_player/services/settings_service.dart';
 
 // 鼠标悬停检测组件
 class HoverWidget extends StatefulWidget {
@@ -46,16 +47,24 @@ class _LyricsPageState extends State<LyricsPage> {
   bool _showLyricsControls = false;
   Timer? _hideControlsTimer;
   double _fontSize = 16.0;
+  String? _fontFamily;
   final ScrollController _scrollController = ScrollController();
   List<LyricLine> _lyrics = [];
   int _currentLineIndex = 0;
   Duration _lastPosition = Duration.zero;
   Timer? _positionUpdateTimer;
+  late SettingsService _settingsService;
 
   @override
   void initState() {
     super.initState();
     _loadLyrics();
+    
+    // 获取设置服务
+    _settingsService = Provider.of<SettingsService>(context, listen: false);
+    
+    // 初始化字体设置
+    _updateFontSettings();
     
     // 启动定时器，定期更新当前行
     _positionUpdateTimer = Timer.periodic(const Duration(milliseconds: 200), (timer) {
@@ -606,7 +615,7 @@ class _LyricsPageState extends State<LyricsPage> {
                               ? Theme.of(context).colorScheme.onBackground
                               : Theme.of(context).colorScheme.onBackground.withOpacity(0.8),
                       letterSpacing: isHovered ? 0.5 : 0,
-                      fontFamily: Theme.of(context).textTheme.bodyLarge?.fontFamily,
+                      fontFamily: _fontFamily,
                     ),
                     textAlign: TextAlign.center,
                     child: Text(
@@ -655,6 +664,26 @@ class _LyricsPageState extends State<LyricsPage> {
         ),
       ),
     );
+  }
+
+  // 更新字体设置
+  void _updateFontSettings() {
+    final settings = _settingsService.settings;
+    setState(() {
+      _fontSize = 16.0; // 可以根据需要从设置中获取字体大小
+      _fontFamily = settings.fontFamily == 'System Default' ? null : settings.fontFamily;
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 监听设置变化
+    final settingsService = Provider.of<SettingsService>(context);
+    if (settingsService != _settingsService) {
+      _settingsService = settingsService;
+      _updateFontSettings();
+    }
   }
 }
 

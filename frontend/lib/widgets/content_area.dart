@@ -601,6 +601,8 @@ class _ContentAreaState extends State<ContentArea> {
                                           tooltip: '更多选项',
                                           padding: EdgeInsets.zero,
                                           constraints: const BoxConstraints(),
+                                          splashColor: Colors.transparent,
+                                          hoverColor: Colors.transparent,
                                         ),
                                       ),
                                     ],

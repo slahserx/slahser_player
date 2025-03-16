@@ -20,14 +20,17 @@ class AppVersion {
 
   /// 当前应用版本
   static final AppVersion current = AppVersion(
-    version: '0.8.4',
-    buildNumber: '51',
-    releaseDate: DateTime(2025, 3, 16),
+    version: '0.9.0',
+    buildNumber: '58',
+    releaseDate: DateTime(2025, 4, 10),
     changelog: [
-      '优化解析功能',
-      '修复歌单功能',
-      '添加更多的过渡动画',
-      '修复一些小bug',
+      '全新UI设计，更加现代和美观',
+      '添加自定义字体支持，可以在设置中更改应用字体',
+      '优化音乐导入功能，防止重复导入相同文件',
+      '改进歌词显示，支持应用字体设置到歌词页面',
+      '优化音乐文件元数据解析，提高解析准确度',
+      '增强专辑和艺术家视图，改进封面图片显示',
+      '修复多个已知问题，提升应用整体稳定性',
     ],
   );
 

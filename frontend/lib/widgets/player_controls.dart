@@ -428,7 +428,7 @@ class PlayerControls extends StatelessWidget {
           onTap: onPressed,
           borderRadius: BorderRadius.circular(20),
           splashColor: Theme.of(context).colorScheme.primary.withOpacity(0.1),
-          hoverColor: Theme.of(context).colorScheme.onSurface.withOpacity(0.05),
+          hoverColor: Colors.transparent,
           child: Container(
             width: 36,
             height: 36,
@@ -542,12 +542,29 @@ class PlayerControls extends StatelessWidget {
                         color: Theme.of(context).colorScheme.surfaceVariant,
                         borderRadius: BorderRadius.circular(4),
                       ),
-                      child: Icon(
-                        Icons.music_note,
-                        size: 20,
-                        color: isCurrentMusic
-                            ? Theme.of(context).colorScheme.primary
-                            : Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: music.coverPath != null
+                          ? Image.file(
+                              File(music.coverPath!),
+                              fit: BoxFit.cover,
+                              width: 40,
+                              height: 40,
+                            )
+                          : music.hasEmbeddedCover && music.embeddedCoverBytes != null
+                            ? Image.memory(
+                                Uint8List.fromList(music.embeddedCoverBytes!),
+                                fit: BoxFit.cover,
+                                width: 40,
+                                height: 40,
+                              )
+                            : Icon(
+                                Icons.music_note,
+                                size: 20,
+                                color: isCurrentMusic
+                                    ? Theme.of(context).colorScheme.primary
+                                    : Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                              ),
                       ),
                     ),
                     title: Text(

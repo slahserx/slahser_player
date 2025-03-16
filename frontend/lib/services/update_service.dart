@@ -51,6 +51,17 @@ class UpdateService extends ChangeNotifier {
   // 历史版本列表，包含当前版本
   final List<AppVersion> _versionHistory = [
     AppVersion(
+      version: '0.9.0',
+      buildNumber: '58',
+      releaseDate: DateTime(2025, 3, 17),
+      changelog: [
+        '优化了UI设计',
+        '优化音乐导入功能，防止重复导入相同文件',
+        '增强专辑和艺术家视图，改进封面图片显示',
+        '修复多个已知问题，提升应用整体稳定性',
+      ],
+    ),
+    AppVersion(
       version: '0.8.4',
       buildNumber: '51',
       releaseDate: DateTime(2025, 3, 16),
