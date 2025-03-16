@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:slahser_player/models/playlist.dart';
@@ -179,82 +180,111 @@ class _PlaylistViewState extends State<PlaylistView> {
       itemCount: songs.length,
       itemBuilder: (context, index) {
         final music = songs[index];
-        final isPlaying = audioPlayer.currentMusic?.id == music.id && 
-                         audioPlayer.playbackState == PlaybackState.playing;
         
-        return Material(
-          color: Colors.transparent,
-          child: ListTile(
-            hoverColor: Theme.of(context).colorScheme.primary.withOpacity(0.1),
-            leading: Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceVariant,
-                borderRadius: BorderRadius.circular(4),
-              ),
-              alignment: Alignment.center,
-              child: isPlaying 
-                  ? Icon(
-                      Icons.play_arrow,
-                      color: Theme.of(context).colorScheme.primary,
-                    )
-                  : Text(
-                      '${index + 1}',
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+        return StreamBuilder<PlaybackState>(
+          stream: audioPlayer.playbackState,
+          initialData: PlaybackState.stopped,
+          builder: (context, snapshot) {
+            final isPlaying = audioPlayer.currentMusic?.id == music.id && 
+                             snapshot.data == PlaybackState.playing;
+            
+            return Material(
+              color: Colors.transparent,
+              child: ListTile(
+                hoverColor: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                leading: SizedBox(
+                  width: 80, // 给足够的宽度
+                  child: Row(
+                    children: [
+                      // 序号列
+                      SizedBox(
+                        width: 30,
+                        child: Text(
+                          '${index + 1}',
+                          style: TextStyle(
+                            color: isPlaying 
+                                ? Theme.of(context).colorScheme.primary
+                                : Theme.of(context).colorScheme.onSurfaceVariant,
+                            fontWeight: isPlaying ? FontWeight.bold : null,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
                       ),
-                    ),
-            ),
-            title: Text(
-              music.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: isPlaying ? Theme.of(context).colorScheme.primary : null,
-                fontWeight: isPlaying ? FontWeight.bold : null,
-              ),
-            ),
-            subtitle: Text(
-              '${music.artist} · ${music.album}',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: isPlaying 
-                        ? Theme.of(context).colorScheme.primary.withOpacity(0.7)
-                        : Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                      const SizedBox(width: 8),
+                      // 封面图片
+                      Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.surfaceVariant,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(4),
+                          child: _buildCoverImage(music),
+                        ),
+                      ),
+                    ],
                   ),
-            ),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (widget.playlist.isDefault)
-                  // 只有默认歌单（我喜欢的音乐）显示收藏按钮
-                  IconButton(
-                    icon: const Icon(Icons.favorite, color: Colors.red),
-                    onPressed: () {
-                      _removeFromPlaylist(music);
-                    },
-                  )
-                else
-                  IconButton(
-                    icon: const Icon(Icons.remove_circle_outline),
-                    onPressed: () {
-                      _removeFromPlaylist(music);
-                    },
-                  ),
-                IconButton(
-                  icon: const Icon(Icons.more_vert),
-                  onPressed: () {
-                    _showSongOptions(music);
-                  },
                 ),
-              ],
-            ),
-            onTap: () {
-              _playSong(index);
-            },
-          ),
+                title: Padding(
+                  padding: const EdgeInsets.only(left: 8.0),
+                  child: Text(
+                    music.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: isPlaying ? Theme.of(context).colorScheme.primary : null,
+                      fontWeight: isPlaying ? FontWeight.bold : null,
+                    ),
+                  ),
+                ),
+                subtitle: Padding(
+                  padding: const EdgeInsets.only(left: 8.0),
+                  child: Text(
+                    '${music.artist} · ${music.album}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: isPlaying 
+                              ? Theme.of(context).colorScheme.primary.withOpacity(0.7)
+                              : Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                        ),
+                  ),
+                ),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (widget.playlist.isDefault)
+                      // 只有默认歌单（我喜欢的音乐）显示收藏按钮
+                      IconButton(
+                        icon: const Icon(Icons.favorite, color: Colors.red),
+                        onPressed: () {
+                          _removeFromPlaylist(music);
+                        },
+                      )
+                    else
+                      IconButton(
+                        icon: const Icon(Icons.remove_circle_outline),
+                        onPressed: () {
+                          _removeFromPlaylist(music);
+                        },
+                      ),
+                    IconButton(
+                      icon: const Icon(Icons.more_vert),
+                      onPressed: () {
+                        _showSongOptions(music);
+                      },
+                    ),
+                  ],
+                ),
+                onTap: () {
+                  _playSong(index);
+                },
+              ),
+            );
+          },
         );
       },
     );
@@ -564,6 +594,54 @@ class _PlaylistViewState extends State<PlaylistView> {
           ],
         );
       },
+    );
+  }
+
+  Widget _buildCoverImage(MusicFile music) {
+    if (music.coverPath != null) {
+      return Hero(
+        tag: 'playlist-cover-${music.id}-${widget.playlist.id}',
+        child: Image.file(
+          File(music.coverPath!),
+          fit: BoxFit.cover,
+          gaplessPlayback: true,
+          cacheWidth: 100, 
+          cacheHeight: 100,
+          errorBuilder: (context, error, stackTrace) {
+            return _buildFallbackCover(music);
+          },
+        ),
+      );
+    } else if (music.hasEmbeddedCover()) {
+      return Hero(
+        tag: 'playlist-embedded-cover-${music.id}-${widget.playlist.id}',
+        child: Image.memory(
+          Uint8List.fromList(music.getCoverBytes()!),
+          fit: BoxFit.cover,
+          gaplessPlayback: true,
+          cacheWidth: 100,
+          cacheHeight: 100,
+          errorBuilder: (context, error, stackTrace) {
+            return _buildFallbackCover(music);
+          },
+        ),
+      );
+    } else {
+      return Hero(
+        tag: 'playlist-no-cover-${music.id}-${widget.playlist.id}',
+        child: _buildFallbackCover(music),
+      );
+    }
+  }
+  
+  Widget _buildFallbackCover(MusicFile music) {
+    return Container(
+      color: Theme.of(context).colorScheme.primary.withOpacity(0.2),
+      child: Icon(
+        Icons.music_note,
+        color: Theme.of(context).colorScheme.primary,
+        size: 20,
+      ),
     );
   }
 } 

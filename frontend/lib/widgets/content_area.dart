@@ -9,6 +9,7 @@ import 'package:slahser_player/widgets/settings_panel.dart';
 import 'package:slahser_player/widgets/playlist_view.dart';
 import 'dart:io';
 import '../enums/playback_state.dart';
+import 'dart:typed_data';
 
 // 内容类型枚举
 enum ContentType {
@@ -476,6 +477,7 @@ class ContentAreaState extends State<ContentArea> {
           child: Row(
             children: [
               const SizedBox(width: 56), // 给左侧图标留出空间
+              const SizedBox(width: 30), // 给序号列留出空间
               // 标题
               Expanded(
                 flex: 3,
@@ -544,7 +546,22 @@ class ContentAreaState extends State<ContentArea> {
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                         child: Row(
                           children: [
-                            // 图标区域
+                            // 序号列
+                            SizedBox(
+                              width: 30,
+                              child: Text(
+                                '${index + 1}',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: isPlaying 
+                                      ? Theme.of(context).colorScheme.primary
+                                      : Theme.of(context).colorScheme.onSurfaceVariant,
+                                  fontWeight: isPlaying ? FontWeight.bold : null,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            // 封面图片
                             Container(
                               width: 40,
                               height: 40,
@@ -552,12 +569,9 @@ class ContentAreaState extends State<ContentArea> {
                                 color: Theme.of(context).colorScheme.surfaceVariant,
                                 borderRadius: BorderRadius.circular(4),
                               ),
-                              child: Icon(
-                                isPlaying ? Icons.music_note : Icons.music_note,
-                                size: 20,
-                                color: isPlaying 
-                                    ? Theme.of(context).colorScheme.primary 
-                                    : Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(4),
+                                child: _buildCoverImage(music, isPlaying),
                               ),
                             ),
                             const SizedBox(width: 16),
@@ -939,6 +953,92 @@ class ContentAreaState extends State<ContentArea> {
           ],
         );
       },
+    );
+  }
+
+  // 构建播放列表状态图标
+  Widget _buildPlayingStatusIcon(BuildContext context, AudioPlayerService audioPlayer, MusicFile music) {
+    return StreamBuilder<PlaybackState>(
+      stream: audioPlayer.playbackState,
+      initialData: PlaybackState.stopped,
+      builder: (context, snapshot) {
+        final isPlaying = audioPlayer.currentMusic?.id == music.id && 
+                          snapshot.data == PlaybackState.playing;
+        
+        return Container(
+          width: 20,
+          height: 20,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: isPlaying 
+                ? Theme.of(context).colorScheme.primary.withOpacity(0.1)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: isPlaying
+              ? Icon(
+                  Icons.play_arrow,
+                  size: 14,
+                  color: Theme.of(context).colorScheme.primary,
+                )
+              : Text(
+                  '${music.trackNumber?.toString() ?? "-"}',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                      ),
+                ),
+        );
+      }
+    );
+  }
+
+  Widget _buildCoverImage(MusicFile music, bool isPlaying) {
+    if (music.coverPath != null) {
+      return Hero(
+        tag: 'cover-${music.id}',
+        child: Image.file(
+          File(music.coverPath!),
+          fit: BoxFit.cover,
+          gaplessPlayback: true,
+          errorBuilder: (context, error, stackTrace) {
+            return _buildFallbackCover(isPlaying);
+          },
+        ),
+      );
+    } else if (music.hasEmbeddedCover()) {
+      return Hero(
+        tag: 'embedded-cover-${music.id}',
+        child: Image.memory(
+          Uint8List.fromList(music.getCoverBytes()!),
+          fit: BoxFit.cover,
+          gaplessPlayback: true,
+          errorBuilder: (context, error, stackTrace) {
+            return _buildFallbackCover(isPlaying);
+          },
+        ),
+      );
+    } else {
+      return Hero(
+        tag: 'no-cover-${music.id}',
+        child: _buildFallbackCover(isPlaying),
+      );
+    }
+  }
+
+  Widget _buildFallbackCover(bool isPlaying) {
+    return Container(
+      color: isPlaying 
+          ? Theme.of(context).colorScheme.primary.withOpacity(0.2)
+          : Theme.of(context).colorScheme.surfaceVariant,
+      child: Center(
+        child: Icon(
+          Icons.music_note,
+          size: 20,
+          color: isPlaying 
+              ? Theme.of(context).colorScheme.primary
+              : Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.6),
+        ),
+      ),
     );
   }
 } 

@@ -19,6 +19,7 @@ class MusicFile {
   final String? coverPath;
   final Duration duration;
   final List<int>? embeddedCoverBytes;
+  final int? trackNumber;
   
   MusicFile({
     required this.id,
@@ -32,6 +33,7 @@ class MusicFile {
     this.coverPath,
     required this.duration,
     this.embeddedCoverBytes,
+    this.trackNumber,
   });
   
   // 从文件路径创建MusicFile对象
@@ -46,6 +48,35 @@ class MusicFile {
     String album = '未知专辑';
     Duration duration = const Duration(seconds: 0);
     List<int>? embeddedCoverBytes;
+    int? trackNumber;
+    
+    // 尝试从媒体文件读取元数据
+    try {
+      if (fileExtension == 'mp3') {
+        // 使用直接读取ID3标签的方法
+        final metadata = await _readID3TagsFromMP3File(filePath);
+        title = metadata['title'] ?? title;
+        artist = metadata['artist'] ?? artist;
+        album = metadata['album'] ?? album;
+        duration = metadata['duration'] ?? duration;
+        embeddedCoverBytes = metadata['coverBytes'] as List<int>?;
+        trackNumber = metadata['trackNumber'] as int?;
+      } else {
+        // 使用标准元数据读取
+        final metadata = await MetadataRetriever.fromFile(File(filePath));
+        title = metadata.trackName ?? title;
+        artist = metadata.trackArtistNames?.join(', ') ?? artist;
+        album = metadata.albumName ?? album;
+        duration = Duration(milliseconds: metadata.trackDuration ?? 0);
+        embeddedCoverBytes = metadata.albumArt;
+        // 尝试获取曲目编号
+        if (metadata.trackNumber != null) {
+          trackNumber = int.tryParse(metadata.trackNumber.toString());
+        }
+      }
+    } catch (e) {
+      debugPrint('读取元数据失败：$e');
+    }
     
     // 先从文件名提取基本信息（作为备用）
     Map<String, String> fileNameInfo = _extractInfoFromFileName(title);
@@ -99,43 +130,43 @@ class MusicFile {
     if (!metadataReadSuccess) {
       try {
         debugPrint('尝试使用flutter_media_metadata读取...');
-        final metadata = await MetadataRetriever.fromFile(file);
-        
+      final metadata = await MetadataRetriever.fromFile(file);
+      
         // 提取元数据 - 标题
-        if (metadata.trackName != null && metadata.trackName!.isNotEmpty) {
-          title = metadata.trackName!;
+      if (metadata.trackName != null && metadata.trackName!.isNotEmpty) {
+        title = metadata.trackName!;
           metadataReadSuccess = true;
           debugPrint('成功从元数据读取标题: $title');
-        }
-        
+      }
+      
         // 提取元数据 - 专辑
-        if (metadata.albumName != null && metadata.albumName!.isNotEmpty) {
-          album = metadata.albumName!;
+      if (metadata.albumName != null && metadata.albumName!.isNotEmpty) {
+        album = metadata.albumName!;
           metadataReadSuccess = true;
           debugPrint('成功从元数据读取专辑: $album');
-        }
-        
+      }
+      
         // 提取元数据 - 艺术家
-        if (metadata.trackArtistNames != null && metadata.trackArtistNames!.isNotEmpty) {
-          artist = metadata.trackArtistNames!.join(', ');
+      if (metadata.trackArtistNames != null && metadata.trackArtistNames!.isNotEmpty) {
+        artist = metadata.trackArtistNames!.join(', ');
           metadataReadSuccess = true;
           debugPrint('成功从元数据读取艺术家: $artist');
-        } else if (metadata.albumArtistName != null && metadata.albumArtistName!.isNotEmpty) {
-          artist = metadata.albumArtistName!;
+      } else if (metadata.albumArtistName != null && metadata.albumArtistName!.isNotEmpty) {
+        artist = metadata.albumArtistName!;
           metadataReadSuccess = true;
           debugPrint('成功从元数据读取专辑艺术家: $artist');
-        }
-        
+      }
+      
         // 提取元数据 - 时长
-        if (metadata.trackDuration != null && metadata.trackDuration! > 0) {
-          duration = Duration(milliseconds: metadata.trackDuration!);
+      if (metadata.trackDuration != null && metadata.trackDuration! > 0) {
+        duration = Duration(milliseconds: metadata.trackDuration!);
           metadataReadSuccess = true;
           debugPrint('成功从元数据读取时长: ${duration.inSeconds}秒');
-        }
-        
-        // 提取内嵌封面
+      }
+      
+      // 提取内嵌封面
         if (metadata.albumArt != null && metadata.albumArt!.isNotEmpty) {
-          embeddedCoverBytes = metadata.albumArt;
+        embeddedCoverBytes = metadata.albumArt;
           debugPrint('成功读取内嵌封面图片');
         }
       } catch (e) {
@@ -157,7 +188,7 @@ class MusicFile {
           duration = Duration(seconds: estimatedSeconds > 0 ? estimatedSeconds : 180);
           debugPrint('使用文件大小估算时长: ${duration.inSeconds}秒 (文件大小: ${fileSize}字节)');
         }
-      } catch (e) {
+    } catch (e) {
         debugPrint('备用方法读取元数据失败: $e');
       }
     }
@@ -194,6 +225,7 @@ class MusicFile {
       coverPath: coverPath,
       duration: duration,
       embeddedCoverBytes: embeddedCoverBytes,
+      trackNumber: trackNumber,
     );
   }
   
@@ -215,134 +247,125 @@ class MusicFile {
       debugPrint('文件尺寸: $fileSize 字节');
       
       // 解析ID3v2标签（如果存在）
-      if (fileSize > 10 && 
-          header[0] == 0x49 && // 'I'
-          header[1] == 0x44 && // 'D'
-          header[2] == 0x33) { // '3'
-        
-        debugPrint('找到ID3v2标签标记');
-        
-        // 标签版本
-        final id3v2Version = header[3];
-        // 标签大小（不包括头部的10字节）
-        final tagSize = ((header[6] & 0x7F) << 21) |
-                       ((header[7] & 0x7F) << 14) |
-                       ((header[8] & 0x7F) << 7) |
-                       (header[9] & 0x7F);
-        
-        debugPrint('ID3v2版本: $id3v2Version, 标签大小: $tagSize 字节');
-        
-        // 读取完整标签（最大限制读取1MB，防止过大内存分配）
-        if (tagSize > 0 && tagSize < min(fileSize, 1024 * 1024)) {
-          try {
-            final completeTagBytes = await file.openRead(10, min(fileSize, 10 + tagSize)).toList();
-            final completeTag = Uint8List.fromList(completeTagBytes.expand((x) => x).toList());
+      if (fileSize > 10 && header[0] == 0x49 && header[1] == 0x44 && header[2] == 0x33) {
+        try {
+          final version = header[3]; // 版本
+          final revision = header[4]; // 修订号
+          
+          // 计算标签大小（7位，忽略最高位）
+          final tagSize = ((header[6] & 0x7F) << 21) |
+                         ((header[7] & 0x7F) << 14) |
+                         ((header[8] & 0x7F) << 7) |
+                         (header[9] & 0x7F);
+          
+          debugPrint('ID3v2标签: 版本${version}.${revision}, 大小: $tagSize 字节');
+          
+          // 读取整个ID3v2标签
+          final maxTagSize = 1024 * 1024; // 限制最大读取大小为1MB
+          final actualTagSize = tagSize > maxTagSize ? maxTagSize : tagSize;
+          
+          final tagBytes = await file.openRead(10, 10 + actualTagSize).toList();
+          final tagData = Uint8List.fromList(tagBytes.expand((x) => x).toList());
+          
+          // 解析ID3v2帧
+          int offset = 0;
+          while (offset < tagData.length - 10) {
+            // 读取帧ID
+            if (tagData.length - offset < 10) break; // 确保有足够的数据读取帧头
             
-            // 解析各种帧
-            int offset = 0;
-            while (offset < completeTag.length - 10) {
-              // ID3v2.3+的帧头是10字节：4字节ID，4字节大小，2字节标志
-              if (offset + 10 > completeTag.length) break;
-              
-              // 读取帧ID
-              String frameId = '';
-              bool validFrameId = true;
-              for (int i = 0; i < 4; i++) {
-                final charCode = completeTag[offset + i];
-                if (charCode >= 0x20 && charCode <= 0x7E) { // 有效可打印ASCII字符
-                  frameId += String.fromCharCode(charCode);
-                } else {
-                  validFrameId = false;
-                  break;
-                }
-              }
-              
-              // 无效的帧ID，可能到达了填充区域或数据结尾
-              if (!validFrameId || frameId.isEmpty) {
-                break;
-              }
-              
-              // 读取帧大小 - 防止无效数据
-              int frameSize;
-              if (id3v2Version >= 4) {
-                // ID3v2.4使用同步安全的整数
-                frameSize = ((completeTag[offset + 4] & 0x7F) << 21) |
-                           ((completeTag[offset + 5] & 0x7F) << 14) |
-                           ((completeTag[offset + 6] & 0x7F) << 7) |
-                           (completeTag[offset + 7] & 0x7F);
+            String frameId = '';
+            // 确保帧ID是有效的ASCII字符
+            for (int i = 0; i < 4; i++) {
+              int charCode = tagData[offset + i];
+              if (charCode >= 32 && charCode <= 126) { // 可打印ASCII字符
+                frameId += String.fromCharCode(charCode);
               } else {
-                // ID3v2.3及更早版本使用常规整数
-                frameSize = (completeTag[offset + 4] << 24) |
-                           (completeTag[offset + 5] << 16) |
-                           (completeTag[offset + 6] << 8) |
-                           completeTag[offset + 7];
+                break; // 遇到无效字符，结束帧ID读取
               }
-              
-              // 帧大小检查
-              if (frameSize <= 0 || frameSize > completeTag.length - offset - 10) {
-                // 无效的帧大小，跳过这个帧
-                offset += 1; // 只前进一个字节，尝试重新同步
-                continue;
+            }
+            
+            // 如果帧ID无效，跳出循环
+            if (frameId.length != 4) {
+              break;
+            }
+            
+            // 读取帧大小
+            int frameSize = 0;
+            if (version == 4) { // ID3v2.4
+              frameSize = (tagData[offset + 4] << 21) |
+                         (tagData[offset + 5] << 14) |
+                         (tagData[offset + 6] << 7) |
+                         tagData[offset + 7];
+            } else { // ID3v2.3及以下
+              frameSize = (tagData[offset + 4] << 24) |
+                         (tagData[offset + 5] << 16) |
+                         (tagData[offset + 6] << 8) |
+                         tagData[offset + 7];
+            }
+            
+            // 帧头标志
+            final flags = (tagData[offset + 8] << 8) | tagData[offset + 9];
+            
+            // 跳过过大的帧（可能是错误数据）
+            if (frameSize <= 0 || frameSize > 1024 * 1024 || offset + 10 + frameSize > tagData.length) {
+              offset += 10; // 跳过帧头，继续下一帧
+              continue;
+            }
+            
+            // 提取帧数据
+            final frameData = Uint8List.fromList(
+              tagData.sublist(offset + 10, offset + 10 + frameSize)
+            );
+            
+            // 根据帧ID解析内容
+            if (['TIT2', 'TT2'].contains(frameId)) { // 标题
+              String title = _decodeTextFromFrameData(frameData, frameId);
+              if (title.isNotEmpty) {
+                result['title'] = title;
+                debugPrint('解析到标题: $title');
               }
-              
-              if (frameId.isNotEmpty && frameSize > 0 && 
-                  offset + 10 + frameSize <= completeTag.length) {
-                
-                debugPrint('发现帧: $frameId, 大小: $frameSize 字节');
-                
-                // 帧内容（跳过帧头）
-                if (frameSize > 1) {
-                  // 第一个字节通常是文本编码
-                  int encodingByte = completeTag[offset + 10];
-                  final frameData = completeTag.sublist(offset + 10, offset + 10 + frameSize);
-                  
-                  // 根据帧ID解析内容
-                  if (['TIT2', 'TT2'].contains(frameId)) { // 标题
-                    String title = _decodeTextFromFrameData(frameData, frameId);
-                    if (title.isNotEmpty) {
-                      result['title'] = title;
-                      debugPrint('解析到标题: $title');
-                    }
-                  } else if (['TPE1', 'TP1'].contains(frameId)) { // 艺术家
-                    String artist = _decodeTextFromFrameData(frameData, frameId);
-                    if (artist.isNotEmpty) {
-                      result['artist'] = artist;
-                      debugPrint('解析到艺术家: $artist');
-                    }
-                  } else if (['TALB', 'TAL'].contains(frameId)) { // 专辑
-                    String album = _decodeTextFromFrameData(frameData, frameId);
-                    if (album.isNotEmpty) {
-                      result['album'] = album;
-                      debugPrint('解析到专辑: $album');
-                    }
-                  } else if (['TLEN', 'TLE'].contains(frameId)) { // 时长
-                    String durationStr = _decodeTextFromFrameData(frameData, frameId);
-                    if (durationStr.isNotEmpty) {
-                      try {
-                        // 移除非数字字符
-                        durationStr = durationStr.replaceAll(RegExp(r'[^0-9]'), '');
-                        if (durationStr.isNotEmpty) {
-                          int ms = int.parse(durationStr);
-                          // 仅接受合理的时长值（最小1秒，最大10小时）
-                          if (ms >= 1000 && ms < 36000000) {
-                            result['duration'] = Duration(milliseconds: ms);
-                            debugPrint('解析到时长: ${ms}毫秒');
-                          }
-                        }
-                      } catch (e) {
-                        debugPrint('解析时长失败: $e');
-                      }
-                    }
-                  }
+            } else if (['TPE1', 'TP1'].contains(frameId)) { // 艺术家
+              String artist = _decodeTextFromFrameData(frameData, frameId);
+              if (artist.isNotEmpty) {
+                result['artist'] = artist;
+                debugPrint('解析到艺术家: $artist');
+              }
+            } else if (['TALB', 'TAL'].contains(frameId)) { // 专辑
+              String album = _decodeTextFromFrameData(frameData, frameId);
+              if (album.isNotEmpty) {
+                result['album'] = album;
+                debugPrint('解析到专辑: $album');
+              }
+            } else if (['TLEN', 'TLE'].contains(frameId)) { // 时长
+              String durationStr = _decodeTextFromFrameData(frameData, frameId);
+              if (durationStr.isNotEmpty) {
+                try {
+                  final durationMs = int.parse(durationStr);
+                  result['duration'] = Duration(milliseconds: durationMs);
+                  debugPrint('解析到时长: ${durationMs}ms');
+                } catch (e) {
+                  debugPrint('解析时长字符串失败: $durationStr');
                 }
               }
-              
-              // 移动到下一帧
-              offset += 10 + frameSize;
+            } else if (['TRCK', 'TRK'].contains(frameId)) { // 曲目编号
+              String trackStr = _decodeTextFromFrameData(frameData, frameId);
+              if (trackStr.isNotEmpty) {
+                try {
+                  // 处理可能的'1/10'格式
+                  final parts = trackStr.split('/');
+                  result['trackNumber'] = int.parse(parts[0]);
+                  debugPrint('解析到曲目编号: ${parts[0]}');
+                } catch (e) {
+                  debugPrint('解析曲目编号失败: $trackStr');
+                }
+              }
             }
-          } catch (e) {
-            debugPrint('解析ID3v2标签失败: $e');
+            
+            // 移动到下一帧
+            offset += 10 + frameSize;
           }
+        } catch (e) {
+          debugPrint('解析ID3v2标签失败: $e');
         }
       }
       
@@ -953,8 +976,8 @@ class MusicFile {
     final lrcPath = path.join(directory, '$baseName.lrc');
     
     try {
-      if (File(lrcPath).existsSync()) {
-        return lrcPath;
+    if (File(lrcPath).existsSync()) {
+      return lrcPath;
       }
     } catch (e) {
       debugPrint('查找歌词文件失败: $e');
@@ -985,11 +1008,11 @@ class MusicFile {
     ];
     
     try {
-      for (final name in possibleNames) {
-        final coverPath = path.join(directory, name);
-        if (File(coverPath).existsSync()) {
-          return coverPath;
-        }
+    for (final name in possibleNames) {
+      final coverPath = path.join(directory, name);
+      if (File(coverPath).existsSync()) {
+        return coverPath;
+      }
       }
     } catch (e) {
       debugPrint('查找封面图片失败: $e');
@@ -1016,22 +1039,21 @@ class MusicFile {
     return embeddedCoverBytes;
   }
   
-  // 从JSON构造
+  // 从JSON创建MusicFile对象
   factory MusicFile.fromJson(Map<String, dynamic> json) {
     return MusicFile(
       id: json['id'] ?? const Uuid().v4(),
       filePath: json['filePath'] ?? '',
       fileName: json['fileName'] ?? '',
       fileExtension: json['fileExtension'] ?? '',
-      title: json['title'] ?? '未知标题',
+      title: json['title'] ?? '',
       artist: json['artist'] ?? '未知艺术家',
       album: json['album'] ?? '未知专辑',
       lyricsPath: json['lyricsPath'],
       coverPath: json['coverPath'],
-      duration: json['durationInSeconds'] != null
-          ? Duration(seconds: json['durationInSeconds'])
-          : const Duration(seconds: 0),
-      embeddedCoverBytes: null,
+      duration: Duration(seconds: json['durationInSeconds'] ?? 0),
+      trackNumber: json['trackNumber'],
+      // embeddedCoverBytes在保存时被排除，加载时为null
     );
   }
   
@@ -1048,6 +1070,8 @@ class MusicFile {
       'lyricsPath': lyricsPath,
       'coverPath': coverPath,
       'durationInSeconds': duration.inSeconds,
+      'trackNumber': trackNumber,
+      // 不保存embeddedCoverBytes，因为太大可能导致序列化问题
     };
   }
   

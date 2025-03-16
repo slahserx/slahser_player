@@ -89,18 +89,81 @@ class AudioPlayerService extends ChangeNotifier {
   int _fadeInDuration = 500;
   int _fadeOutDuration = 500;
   
+  AudioPlayerService() {
+    // 初始化音频会话
+    AudioSession.instance.then((session) {
+      session.configure(const AudioSessionConfiguration.music());
+    });
+
+    // 设置播放器状态监听
+    _audioPlayer.playerStateStream
+      .handleError((error, stackTrace) {
+        // 忽略BufferingProgress错误
+        if (error.toString().contains('BufferingProgress')) {
+          debugPrint('忽略BufferingProgress错误: $error');
+          return;
+        } else {
+          debugPrint('播放器错误: $error');
+          // 对于其他类型的错误，传递
+          Error.throwWithStackTrace(error, stackTrace);
+        }
+      })
+      .listen((state) {
+        debugPrint('播放器状态变化: ${state.playing ? "播放中" : "已暂停"}, ${state.processingState}');
+        // 当前是否有音乐加载
+        final bool hasCurrent = _currentMusic != null;
+        
+        if (state.playing) {
+          _playbackState.add(PlaybackState.playing);
+          debugPrint('状态更新为: 播放中');
+        } else {
+          switch (state.processingState) {
+            case ProcessingState.idle:
+            case ProcessingState.completed:
+              _playbackState.add(hasCurrent ? PlaybackState.completed : PlaybackState.stopped);
+              debugPrint('状态更新为: ${hasCurrent ? "完成" : "停止"}');
+              break;
+            case ProcessingState.loading:
+            case ProcessingState.buffering:
+              _playbackState.add(PlaybackState.loading);
+              debugPrint('状态更新为: 加载中');
+              break;
+            case ProcessingState.ready:
+              if (hasCurrent) {
+                _playbackState.add(PlaybackState.paused);
+                debugPrint('状态更新为: 暂停');
+              } else {
+                _playbackState.add(PlaybackState.stopped);
+                debugPrint('状态更新为: 停止（无当前音乐）');
+              }
+              break;
+          }
+        }
+      });
+      
+    // 初始化
+    init();
+  }
+  
   // 初始化方法
   Future<void> init() async {
-    // 配置音频会话
-    final session = await AudioSession.instance;
-    await session.configure(const AudioSessionConfiguration.music());
-    
-    // 初始化音频播放器
-    _audioPlayer.playbackEventStream.listen((event) {
-      if (event.processingState == ProcessingState.completed) {
-        _handlePlaybackCompletion();
-      }
-    });
+    // 初始化音频播放器事件监听
+    _audioPlayer.playbackEventStream
+      .handleError((error, stackTrace) {
+        // 忽略BufferingProgress错误
+        if (error.toString().contains('BufferingProgress')) {
+          debugPrint('事件流忽略BufferingProgress错误: $error');
+          return;
+        } else {
+          debugPrint('播放事件错误: $error');
+          Error.throwWithStackTrace(error, stackTrace);
+        }
+      })
+      .listen((event) {
+        if (event.processingState == ProcessingState.completed) {
+          _handlePlaybackCompletion();
+        }
+      });
     
     // 添加音频位置监听器
     _audioPlayer.positionStream.listen((position) {
@@ -144,63 +207,6 @@ class AudioPlayerService extends ChangeNotifier {
       }
     } catch (e) {
       debugPrint('加载音量设置失败: $e');
-    }
-  }
-  
-  // 初始化
-  Future<void> _init() async {
-    try {
-      // 初始化音频会话
-      final session = await AudioSession.instance;
-      await session.configure(const AudioSessionConfiguration.music());
-      
-      // 处理播放事件并忽略BufferingProgress错误
-      _audioPlayer.playbackEventStream.handleError((Object e) {
-        // 忽略BufferingProgress错误，但记录日志
-        if (e.toString().contains('BufferingProgress')) {
-          debugPrint('忽略BufferingProgress错误：$e');
-          return;
-        }
-        // 其他错误重新抛出
-        throw e;
-      }).listen(
-        (event) {
-          // 捕获并处理BufferingProgress事件
-          try {
-            // 处理播放完成事件
-            if (event.processingState == ProcessingState.completed) {
-              _handlePlaybackCompletion();
-            }
-          } catch (e) {
-            // 忽略BufferingProgress相关错误
-            if (e.toString().contains('BufferingProgress')) {
-              debugPrint('忽略事件处理中的BufferingProgress错误');
-              return;
-            }
-            // 其他错误重新抛出
-            rethrow;
-          }
-        },
-        onError: (Object e, StackTrace stackTrace) {
-          debugPrint('音频播放错误: $e');
-          // 如果是BufferingProgress错误，忽略它
-          if (e.toString().contains('BufferingProgress')) {
-            debugPrint('忽略BufferingProgress错误');
-            return;
-          }
-          // 否则更新状态为错误
-          _playbackState.add(PlaybackState.error);
-          notifyListeners();
-        },
-      );
-      
-      // 初始化播放模式
-      await _updatePlaybackMode();
-      
-      // 初始化均衡器 (如果支持)
-      _applyEqualizerSettings();
-    } catch (e) {
-      debugPrint('初始化音频播放器失败: $e');
     }
   }
   
@@ -273,38 +279,72 @@ class AudioPlayerService extends ChangeNotifier {
       // 更新状态为加载中
       _playbackState.add(PlaybackState.loading);
       
+      debugPrint('准备播放音乐: ${music.title}');
+      
+      // 停止当前播放
+      await _audioPlayer.stop().catchError((error) {
+        if (error.toString().contains('BufferingProgress')) {
+          debugPrint('停止播放时忽略BufferingProgress错误');
+          return null;
+        }
+        throw error;
+      });
+      
       // 设置音频源
       try {
-        await _audioPlayer.setFilePath(music.filePath)
-          .catchError((error) {
-            // 忽略BufferingProgress错误
-            if (error.toString().contains('BufferingProgress')) {
-              debugPrint('设置文件路径时忽略BufferingProgress错误: $error');
-              return;
-            }
-            throw error;
-          });
+        final uri = Uri.file(music.filePath);
+        debugPrint('设置音频源: $uri');
+        
+        await _audioPlayer.setAudioSource(
+          AudioSource.uri(uri),
+          preload: true
+        ).catchError((error) {
+          // 忽略BufferingProgress错误
+          if (error.toString().contains('BufferingProgress')) {
+            debugPrint('设置音频源时忽略BufferingProgress错误: $error');
+            return null;
+          }
+          throw error;
+        });
+        
+        debugPrint('音频源设置成功');
       } catch (e) {
-        debugPrint('设置音频源失败: $e');
-        _playbackState.add(PlaybackState.error);
-        rethrow;
+        if (e.toString().contains('BufferingProgress')) {
+          debugPrint('忽略设置音频源时的BufferingProgress错误');
+        } else {
+          debugPrint('设置音频源失败: $e');
+          _playbackState.add(PlaybackState.error);
+          rethrow;
+        }
       }
+      
+      // 强制延迟一小段时间，确保音频源准备好
+      await Future.delayed(const Duration(milliseconds: 500));
       
       // 开始播放
       try {
-        await _audioPlayer.play()
-          .catchError((error) {
-            // 忽略BufferingProgress错误
-            if (error.toString().contains('BufferingProgress')) {
-              debugPrint('播放时忽略BufferingProgress错误: $error');
-              return;
-            }
-            throw error;
-          });
+        debugPrint('尝试播放: ${music.title}');
+        await _audioPlayer.play().catchError((error) {
+          // 忽略BufferingProgress错误
+          if (error.toString().contains('BufferingProgress')) {
+            debugPrint('播放时忽略BufferingProgress错误: $error');
+            return null;
+          }
+          throw error;
+        });
+          
+        // 成功播放后，明确设置为播放状态
+        debugPrint('开始播放: ${music.title}');
+        _playbackState.add(PlaybackState.playing);
       } catch (e) {
-        debugPrint('开始播放失败: $e');
-        _playbackState.add(PlaybackState.error);
-        rethrow;
+        if (e.toString().contains('BufferingProgress')) {
+          debugPrint('忽略播放时的BufferingProgress错误');
+          _playbackState.add(PlaybackState.playing);
+        } else {
+          debugPrint('开始播放失败: $e');
+          _playbackState.add(PlaybackState.error);
+          rethrow;
+        }
       }
     } catch (e) {
       debugPrint('播放音乐失败: $e');
@@ -378,7 +418,9 @@ class AudioPlayerService extends ChangeNotifier {
   
   // 恢复播放
   Future<void> resume() async {
-    if (_playbackState.value == PlaybackState.paused) {
+    if (_playbackState.value == PlaybackState.paused || 
+        _playbackState.value == PlaybackState.stopped || 
+        _playbackState.value == PlaybackState.completed) {
       await _audioPlayer.play();
       _playbackState.add(PlaybackState.playing);
       notifyListeners();
@@ -397,15 +439,27 @@ class AudioPlayerService extends ChangeNotifier {
   Future<void> next() async {
     if (_playlist.isEmpty || _currentMusic == null) return;
     
+    debugPrint('切换到下一首歌曲');
     final currentIndex = _playlist.indexOf(_currentMusic!);
     if (currentIndex < 0) return;
     
     final nextIndex = (currentIndex + 1) % _playlist.length;
-    await playMusic(_playlist[nextIndex]);
+    final nextMusic = _playlist[nextIndex];
     
-    // 确保新音乐始终处于播放状态
-    if (_playbackState.value != PlaybackState.playing) {
-      await resume();
+    debugPrint('强制播放下一首: ${nextMusic.title}');
+    
+    // 保存当前状态是否为播放中
+    bool wasPlaying = _playbackState.value == PlaybackState.playing;
+    
+    // 直接播放音乐并确保播放状态
+    await playMusic(nextMusic);
+    
+    // 如果之前是播放状态但现在不是，再次尝试播放
+    if (wasPlaying && _playbackState.value != PlaybackState.playing) {
+      debugPrint('尝试恢复播放状态');
+      await Future.delayed(const Duration(milliseconds: 500));
+      await _audioPlayer.play();
+      _playbackState.add(PlaybackState.playing);
     }
   }
   
@@ -413,15 +467,27 @@ class AudioPlayerService extends ChangeNotifier {
   Future<void> previous() async {
     if (_playlist.isEmpty || _currentMusic == null) return;
     
+    debugPrint('切换到上一首歌曲');
     final currentIndex = _playlist.indexOf(_currentMusic!);
     if (currentIndex < 0) return;
     
     final previousIndex = (currentIndex - 1 + _playlist.length) % _playlist.length;
-    await playMusic(_playlist[previousIndex]);
+    final prevMusic = _playlist[previousIndex];
     
-    // 确保新音乐始终处于播放状态
-    if (_playbackState.value != PlaybackState.playing) {
-      await resume();
+    debugPrint('强制播放上一首: ${prevMusic.title}');
+    
+    // 保存当前状态是否为播放中
+    bool wasPlaying = _playbackState.value == PlaybackState.playing;
+    
+    // 直接播放音乐并确保播放状态
+    await playMusic(prevMusic);
+    
+    // 如果之前是播放状态但现在不是，再次尝试播放
+    if (wasPlaying && _playbackState.value != PlaybackState.playing) {
+      debugPrint('尝试恢复播放状态');
+      await Future.delayed(const Duration(milliseconds: 500));
+      await _audioPlayer.play();
+      _playbackState.add(PlaybackState.playing);
     }
   }
   
@@ -561,6 +627,14 @@ class AudioPlayerService extends ChangeNotifier {
   
   // 处理播放完成
   void _handlePlaybackCompletion() async {
+    debugPrint('播放完成，处理下一步操作...');
+    
+    // 如果没有当前音乐，不做任何操作
+    if (_currentMusic == null) {
+      debugPrint('没有当前播放的音乐，忽略完成事件');
+      return;
+    }
+    
     // 根据播放模式处理播放完成后的行为
     switch (_playbackMode) {
       case PlaybackMode.sequential:
@@ -568,28 +642,39 @@ class AudioPlayerService extends ChangeNotifier {
         if (_currentMusic != null) {
           int currentIndex = _playlist.indexOf(_currentMusic!);
           if (currentIndex >= _playlist.length - 1) {
+            debugPrint('播放列表已结束');
             _playbackState.add(PlaybackState.completed);
             notifyListeners();
           } else {
-            // 播放下一首并确保播放状态
-            next();
+            debugPrint('播放下一首歌曲');
+            // 播放下一首（PlayMusic已确保播放状态）
+            await next();
           }
         }
         break;
         
       case PlaybackMode.shuffle:
         // 随机播放模式下，总是自动播放下一首
-        next();
+        debugPrint('随机播放模式，播放下一首');
+        await next();
         break;
         
       case PlaybackMode.repeatOne:
         // 单曲循环模式下，重新播放当前歌曲
         if (_currentMusic != null) {
-          // 重新播放当前歌曲并确保播放状态
+          debugPrint('单曲循环模式，重新播放当前歌曲');
+          
+          // 先停止当前播放
+          await _audioPlayer.stop().catchError((error) {
+            if (error.toString().contains('BufferingProgress')) {
+              return null;
+            }
+            throw error;
+          });
+          
+          // 重新播放当前歌曲
+          await Future.delayed(const Duration(milliseconds: 500));
           await playMusic(_currentMusic!);
-          if (_playbackState.value != PlaybackState.playing) {
-            await resume();
-          }
         }
         break;
     }

@@ -136,243 +136,264 @@ class PlayerControls extends StatelessWidget {
     return Consumer<AudioPlayerService>(
       builder: (context, audioPlayer, child) {
         final currentMusic = audioPlayer.currentMusic;
-        final isPlaying = audioPlayer.playbackState == PlaybackState.playing;
-        final position = audioPlayer.position;
-        final duration = audioPlayer.duration;
         
-        return Container(
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surface,
-            border: Border(
-              top: BorderSide(
-                color: Theme.of(context).dividerColor.withOpacity(0.1),
-              ),
-            ),
-          ),
-          child: Column(
-            children: [
-              // 控制区域
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Row(
-                    children: [
-                      // 左侧：歌曲信息
-                      SizedBox(
-                        width: 300,
-                        child: Row(
-                          children: [
-                            // 封面 - 可点击进入歌词页面
-                            MouseRegion(
-                              cursor: SystemMouseCursors.click,
-                              child: GestureDetector(
-                                onTap: () {
-                                  if (currentMusic != null) {
-                                    _navigateToLyricsPage(context, currentMusic);
-                                  }
-                                },
-                                child: Container(
-                                  width: 56,
-                                  height: 56,
-                                  decoration: BoxDecoration(
-                                    color: Theme.of(context).colorScheme.surfaceVariant,
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: currentMusic?.coverPath != null
-                                      ? ClipRRect(
-                                          borderRadius: BorderRadius.circular(4),
-                                          child: Image.file(
-                                            File(currentMusic!.coverPath!),
-                                            fit: BoxFit.cover,
-                                          ),
-                                        )
-                                      : currentMusic?.hasEmbeddedCover() ?? false
-                                          ? ClipRRect(
-                                              borderRadius: BorderRadius.circular(4),
-                                              child: Image.memory(
-                                                Uint8List.fromList(currentMusic!.getCoverBytes()!),
-                                                fit: BoxFit.cover,
-                                              ),
-                                            )
-                                          : Icon(
-                                              Icons.music_note,
-                                              size: 24,
-                                              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
-                                            ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            // 歌曲信息 - 不可点击
-                            Expanded(
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    currentMusic?.title ?? '未播放',
-                                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  Text(
-                                    currentMusic?.artist ?? '未知艺术家',
-                                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
-                                        ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      // 中间：播放控制
-                      Expanded(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            // 控制按钮
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                _buildControlButton(
-                                  context,
-                                  icon: _getPlaybackModeIcon(audioPlayer.playbackMode),
-                                  tooltip: _getPlaybackModeTooltip(audioPlayer.playbackMode),
-                                  isActive: audioPlayer.playbackMode != PlaybackMode.sequential,
-                                  onPressed: () {
-                                    audioPlayer.togglePlaybackMode();
-                                  },
-                                ),
-                                _buildControlButton(
-                                  context,
-                                  icon: Icons.skip_previous,
-                                  tooltip: '上一曲',
-                                  onPressed: () {
-                                    audioPlayer.previous();
-                                  },
-                                ),
-                                _buildPlayButton(
-                                  context,
-                                  isPlaying: isPlaying,
-                                  onPressed: () {
-                                    audioPlayer.playOrPause();
-                                  },
-                                ),
-                                _buildControlButton(
-                                  context,
-                                  icon: Icons.skip_next,
-                                  tooltip: '下一曲',
-                                  onPressed: () {
-                                    audioPlayer.next();
-                                  },
-                                ),
-                                _buildControlButton(
-                                  context,
-                                  icon: Icons.equalizer,
-                                  tooltip: '均衡器',
-                                  isActive: audioPlayer.isEqualizerEnabled,
-                                  onPressed: () {
-                                    _showEqualizerDialog(context);
-                                  },
-                                ),
-                              ],
-                            ),
-                            // 进度条和时间显示
-                            Row(
-                              children: [
-                                Text(
-                                  AudioPlayerService.formatDuration(position),
-                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                        color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
-                                      ),
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: SliderTheme(
-                                    data: SliderTheme.of(context).copyWith(
-                                      trackHeight: 2.0,
-                                      thumbShape: const RoundSliderThumbShape(
-                                        enabledThumbRadius: 4.0,
-                                        disabledThumbRadius: 4.0,
-                                      ),
-                                      overlayShape: const RoundSliderOverlayShape(
-                                        overlayRadius: 8.0,
-                                      ),
-                                      activeTrackColor: Theme.of(context).colorScheme.primary,
-                                      inactiveTrackColor: Theme.of(context).colorScheme.surfaceVariant,
-                                      thumbColor: Theme.of(context).colorScheme.primary,
-                                      overlayColor: Theme.of(context).colorScheme.primary.withOpacity(0.2),
-                                    ),
-                                    child: Slider(
-                                      value: math.max(0, math.min(position.inMilliseconds.toDouble(), 
-                                              duration.inMilliseconds.toDouble())),
-                                      max: math.max(duration.inMilliseconds.toDouble(), 1.0),
-                                      onChanged: (value) {
-                                        audioPlayer.seekTo(Duration(milliseconds: value.toInt()));
-                                      },
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  AudioPlayerService.formatDuration(duration),
-                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                        color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
-                                      ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                      // 右侧：音量控制
-                      SizedBox(
-                        width: 300,
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: [
-                            _buildControlButton(
-                              context,
-                              icon: Icons.lyrics_outlined,
-                              tooltip: '歌词',
-                              onPressed: () {
-                                if (currentMusic != null) {
-                                  _navigateToLyricsPage(context, currentMusic);
-                                }
-                              },
-                            ),
-                            _buildControlButton(
-                              context,
-                              icon: Icons.queue_music_outlined,
-                              tooltip: '播放队列',
-                              onPressed: () {
-                                _showPlaylist(context, audioPlayer);
-                              },
-                            ),
-                            _buildControlButton(
-                              context,
-                              icon: audioPlayer.isMuted ? Icons.volume_off_outlined : Icons.volume_up_outlined,
-                              tooltip: audioPlayer.isMuted ? '取消静音' : '静音',
-                              onPressed: () {
-                                audioPlayer.toggleMute();
-                              },
-                            ),
-                            VolumeSlider(audioPlayer: audioPlayer),
-                          ],
-                        ),
-                      ),
-                    ],
+        return StreamBuilder<PlaybackState>(
+          stream: audioPlayer.playbackState,
+          initialData: PlaybackState.stopped,
+          builder: (context, snapshot) {
+            final isPlaying = snapshot.data == PlaybackState.playing;
+            final position = audioPlayer.position;
+            final duration = audioPlayer.duration;
+            
+            return Container(
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surface,
+                border: Border(
+                  top: BorderSide(
+                    color: Theme.of(context).dividerColor.withOpacity(0.1),
                   ),
                 ),
               ),
-            ],
-          ),
+              child: Column(
+                children: [
+                  // 控制区域
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Row(
+                        children: [
+                          // 左侧：歌曲信息
+                          SizedBox(
+                            width: 300,
+                            child: Row(
+                              children: [
+                                // 封面 - 可点击进入歌词页面
+                                GestureDetector(
+                                  onTap: () {
+                                    if (currentMusic != null) {
+                                      _navigateToLyricsPage(context, currentMusic);
+                                    }
+                                  },
+                                  child: Container(
+                                    width: 56,
+                                    height: 56,
+                                    decoration: BoxDecoration(
+                                      color: Theme.of(context).colorScheme.surfaceVariant,
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: currentMusic?.coverPath != null
+                                        ? ClipRRect(
+                                            borderRadius: BorderRadius.circular(4),
+                                            child: Hero(
+                                              tag: 'cover-${currentMusic!.id}',
+                                              child: Image.file(
+                                                File(currentMusic!.coverPath!),
+                                                fit: BoxFit.cover,
+                                                cacheWidth: 200,
+                                                cacheHeight: 200,
+                                                gaplessPlayback: true,
+                                              ),
+                                            ),
+                                          )
+                                        : currentMusic?.hasEmbeddedCover() ?? false
+                                            ? ClipRRect(
+                                                borderRadius: BorderRadius.circular(4),
+                                                child: Hero(
+                                                  tag: 'embedded-cover-${currentMusic?.id ?? "unknown"}',
+                                                  child: currentMusic != null
+                                                      ? Image.memory(
+                                                          Uint8List.fromList(currentMusic.getCoverBytes()!),
+                                                          fit: BoxFit.cover,
+                                                          cacheWidth: 200,
+                                                          cacheHeight: 200,
+                                                          gaplessPlayback: true,
+                                                        )
+                                                      : const SizedBox.shrink(),
+                                                ),
+                                              )
+                                            : Hero(
+                                                tag: 'no-cover-${currentMusic?.id ?? "none"}',
+                                                child: Icon(
+                                                  Icons.music_note,
+                                                  size: 24,
+                                                  color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                                                ),
+                                              ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                // 歌曲信息 - 不可点击
+                                Expanded(
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        currentMusic?.title ?? '未播放',
+                                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      Text(
+                                        currentMusic?.artist ?? '未知艺术家',
+                                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                                            ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          // 中间：播放控制
+                          Expanded(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                // 控制按钮
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    _buildControlButton(
+                                      context,
+                                      icon: _getPlaybackModeIcon(audioPlayer.playbackMode),
+                                      tooltip: _getPlaybackModeTooltip(audioPlayer.playbackMode),
+                                      isActive: audioPlayer.playbackMode != PlaybackMode.sequential,
+                                      onPressed: () {
+                                        audioPlayer.togglePlaybackMode();
+                                      },
+                                    ),
+                                    _buildControlButton(
+                                      context,
+                                      icon: Icons.skip_previous,
+                                      tooltip: '上一曲',
+                                      onPressed: () {
+                                        audioPlayer.previous();
+                                      },
+                                    ),
+                                    _buildPlayButton(
+                                      context,
+                                      isPlaying: isPlaying,
+                                      onPressed: () {
+                                        audioPlayer.playOrPause();
+                                      },
+                                    ),
+                                    _buildControlButton(
+                                      context,
+                                      icon: Icons.skip_next,
+                                      tooltip: '下一曲',
+                                      onPressed: () {
+                                        audioPlayer.next();
+                                      },
+                                    ),
+                                    _buildControlButton(
+                                      context,
+                                      icon: Icons.equalizer,
+                                      tooltip: '均衡器',
+                                      isActive: audioPlayer.isEqualizerEnabled,
+                                      onPressed: () {
+                                        _showEqualizerDialog(context);
+                                      },
+                                    ),
+                                  ],
+                                ),
+                                // 进度条和时间显示
+                                Row(
+                                  children: [
+                                    Text(
+                                      AudioPlayerService.formatDuration(position),
+                                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                                          ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: SliderTheme(
+                                        data: SliderTheme.of(context).copyWith(
+                                          trackHeight: 2.0,
+                                          thumbShape: const RoundSliderThumbShape(
+                                            enabledThumbRadius: 4.0,
+                                            disabledThumbRadius: 4.0,
+                                          ),
+                                          overlayShape: const RoundSliderOverlayShape(
+                                            overlayRadius: 8.0,
+                                          ),
+                                          activeTrackColor: Theme.of(context).colorScheme.primary,
+                                          inactiveTrackColor: Theme.of(context).colorScheme.surfaceVariant,
+                                          thumbColor: Theme.of(context).colorScheme.primary,
+                                          overlayColor: Theme.of(context).colorScheme.primary.withOpacity(0.2),
+                                        ),
+                                        child: Slider(
+                                          value: math.max(0, math.min(position.inMilliseconds.toDouble(), 
+                                                  duration.inMilliseconds.toDouble())),
+                                          max: math.max(duration.inMilliseconds.toDouble(), 1.0),
+                                          onChanged: (value) {
+                                            audioPlayer.seekTo(Duration(milliseconds: value.toInt()));
+                                          },
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      AudioPlayerService.formatDuration(duration),
+                                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                                          ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                          // 右侧：音量控制
+                          SizedBox(
+                            width: 300,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              children: [
+                                _buildControlButton(
+                                  context,
+                                  icon: Icons.lyrics_outlined,
+                                  tooltip: '歌词',
+                                  onPressed: () {
+                                    if (currentMusic != null) {
+                                      _navigateToLyricsPage(context, currentMusic);
+                                    }
+                                  },
+                                ),
+                                _buildControlButton(
+                                  context,
+                                  icon: Icons.queue_music_outlined,
+                                  tooltip: '播放队列',
+                                  onPressed: () {
+                                    _showPlaylist(context, audioPlayer);
+                                  },
+                                ),
+                                _buildControlButton(
+                                  context,
+                                  icon: audioPlayer.isMuted ? Icons.volume_off_outlined : Icons.volume_up_outlined,
+                                  tooltip: audioPlayer.isMuted ? '取消静音' : '静音',
+                                  onPressed: () {
+                                    audioPlayer.toggleMute();
+                                  },
+                                ),
+                                VolumeSlider(audioPlayer: audioPlayer),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
         );
       },
     );
@@ -478,81 +499,79 @@ class PlayerControls extends StatelessWidget {
   void _showPlaylist(BuildContext context, AudioPlayerService audioPlayer) {
     showModalBottomSheet(
       context: context,
-      builder: (context) {
-        return SafeArea(
-          child: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    const Text(
-                      '播放队列',
+      builder: (context) => SafeArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  const Text(
+                    '播放队列',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () {
+                      Navigator.pop(context);
+                    },
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: ListView.builder(
+                itemCount: audioPlayer.playlist.length,
+                itemBuilder: (context, index) {
+                  final music = audioPlayer.playlist[index];
+                  final isCurrentMusic = audioPlayer.currentMusic?.id == music.id;
+                  
+                  return ListTile(
+                    leading: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.surfaceVariant,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Icon(
+                        Icons.music_note,
+                        size: 20,
+                        color: isCurrentMusic
+                            ? Theme.of(context).colorScheme.primary
+                            : Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                      ),
+                    ),
+                    title: Text(
+                      music.title,
                       style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
+                        color: isCurrentMusic ? Theme.of(context).colorScheme.primary : null,
+                        fontWeight: isCurrentMusic ? FontWeight.bold : null,
                       ),
                     ),
-                    const Spacer(),
-                    IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () {
-                        Navigator.pop(context);
-                      },
+                    subtitle: Text(
+                      music.artist,
+                      style: TextStyle(
+                        color: isCurrentMusic
+                            ? Theme.of(context).colorScheme.primary.withOpacity(0.7)
+                            : Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                      ),
                     ),
-                  ],
-                ),
+                    onTap: () {
+                      Navigator.pop(context);
+                      audioPlayer.playMusic(music);
+                    },
+                  );
+                },
               ),
-              Expanded(
-                child: ListView.builder(
-                  itemCount: audioPlayer.playlist.length,
-                  itemBuilder: (context, index) {
-                    final music = audioPlayer.playlist[index];
-                    final isCurrentMusic = audioPlayer.currentMusic?.id == music.id;
-                    
-                    return ListTile(
-                      leading: Container(
-                        width: 40,
-                        height: 40,
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.surfaceVariant,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Icon(
-                          Icons.music_note,
-                          size: 20,
-                          color: isCurrentMusic
-                              ? Theme.of(context).colorScheme.primary
-                              : Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
-                        ),
-                      ),
-                      title: Text(
-                        music.title,
-                        style: TextStyle(
-                          color: isCurrentMusic ? Theme.of(context).colorScheme.primary : null,
-                          fontWeight: isCurrentMusic ? FontWeight.bold : null,
-                        ),
-                      ),
-                      subtitle: Text(
-                        music.artist,
-                        style: TextStyle(
-                          color: isCurrentMusic
-                              ? Theme.of(context).colorScheme.primary.withOpacity(0.7)
-                              : Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
-                        ),
-                      ),
-                      onTap: () {
-                        Navigator.pop(context);
-                        audioPlayer.playMusic(music);
-                      },
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        );
-      },
+            ),
+          ],
+        ),
+      ),
     );
   }
   

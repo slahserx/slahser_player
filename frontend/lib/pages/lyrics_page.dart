@@ -174,125 +174,135 @@ class _LyricsPageState extends State<LyricsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.background,
-      body: Consumer<AudioPlayerService>(
-        builder: (context, audioPlayer, child) {
-          final position = audioPlayer.position;
-          final duration = audioPlayer.duration;
-          
-          return Stack(
-            children: [
-              // 主内容
-              Row(
-                children: [
-                  // 左侧：歌曲信息
-                  SizedBox(
-                    width: 400,
-                    child: _buildMusicInfo(context, widget.music, audioPlayer, position, duration),
-                  ),
-                  // 右侧：歌词
-                  Expanded(
-                    child: MouseRegion(
-                      onEnter: (_) => _showLyricsControlsTemporarily(),
-                      onHover: (_) => _showLyricsControlsTemporarily(),
-                      child: _buildLyrics(context, audioPlayer),
-                    ),
-                  ),
-                ],
-              ),
+    final audioPlayer = Provider.of<AudioPlayerService>(context);
+    
+    return StreamBuilder<PlaybackState>(
+      stream: audioPlayer.playbackState,
+      initialData: PlaybackState.stopped,
+      builder: (context, snapshot) {
+        final isPlaying = snapshot.data == PlaybackState.playing;
+        
+        return Scaffold(
+          backgroundColor: Theme.of(context).colorScheme.background,
+          body: Consumer<AudioPlayerService>(
+            builder: (context, audioPlayer, child) {
+              final position = audioPlayer.position;
+              final duration = audioPlayer.duration;
               
-              // 顶部返回按钮 - 始终显示
-              Positioned(
-                top: 0,
-                left: 0,
-                child: Container(
-                  padding: const EdgeInsets.all(16),
-                  child: MouseRegion(
-                    cursor: SystemMouseCursors.click,
-                    child: Material(
-                      color: Colors.transparent,
-                      child: Tooltip(
-                        message: '返回',
-                        child: InkWell(
-                          onTap: () {
-                            Navigator.pop(context);
-                          },
-                          borderRadius: BorderRadius.circular(20),
-                          child: Container(
-                            padding: const EdgeInsets.all(8),
-                            child: const Icon(Icons.arrow_back),
+              return Stack(
+                children: [
+                  // 主内容
+                  Row(
+                    children: [
+                      // 左侧：歌曲信息
+                      SizedBox(
+                        width: 400,
+                        child: _buildMusicInfo(context, widget.music, audioPlayer, position, duration),
+                      ),
+                      // 右侧：歌词
+                      Expanded(
+                        child: MouseRegion(
+                          onEnter: (_) => _showLyricsControlsTemporarily(),
+                          onHover: (_) => _showLyricsControlsTemporarily(),
+                          child: _buildLyrics(context, audioPlayer),
+                        ),
+                      ),
+                    ],
+                  ),
+                  
+                  // 顶部返回按钮 - 始终显示
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    child: Container(
+                      padding: const EdgeInsets.all(16),
+                      child: MouseRegion(
+                        cursor: SystemMouseCursors.click,
+                        child: Material(
+                          color: Colors.transparent,
+                          child: Tooltip(
+                            message: '返回',
+                            child: InkWell(
+                              onTap: () {
+                                Navigator.pop(context);
+                              },
+                              borderRadius: BorderRadius.circular(20),
+                              child: Container(
+                                padding: const EdgeInsets.all(8),
+                                child: const Icon(Icons.arrow_back),
+                              ),
+                            ),
                           ),
                         ),
                       ),
                     ),
                   ),
-                ),
-              ),
-              
-              // 右上角字体调整按钮 - 仅当鼠标在歌词区域时显示
-              Positioned(
-                top: 0,
-                right: 0,
-                child: AnimatedOpacity(
-                  opacity: _showLyricsControls ? 1.0 : 0.0,
-                  duration: const Duration(milliseconds: 200),
-                  child: Container(
-                    padding: const EdgeInsets.all(16),
-                    child: Row(
-                      children: [
-                        MouseRegion(
-                          cursor: SystemMouseCursors.click,
-                          child: Material(
-                            color: Colors.transparent,
-                            child: Tooltip(
-                              message: '减小字体',
-                              child: InkWell(
-                                onTap: () {
-                                  setState(() {
-                                    _fontSize = (_fontSize - 2).clamp(12.0, 32.0);
-                                  });
-                                },
-                                borderRadius: BorderRadius.circular(20),
-                                child: Container(
-                                  padding: const EdgeInsets.all(8),
-                                  child: const Icon(Icons.text_decrease),
+                  
+                  // 右上角字体调整按钮 - 仅当鼠标在歌词区域时显示
+                  Positioned(
+                    top: 0,
+                    right: 0,
+                    child: AnimatedOpacity(
+                      opacity: _showLyricsControls ? 1.0 : 0.0,
+                      duration: const Duration(milliseconds: 200),
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        child: Row(
+                          children: [
+                            MouseRegion(
+                              cursor: SystemMouseCursors.click,
+                              child: Material(
+                                color: Colors.transparent,
+                                child: Tooltip(
+                                  message: '减小字体',
+                                  child: InkWell(
+                                    onTap: () {
+                                      setState(() {
+                                        _fontSize = (_fontSize - 2).clamp(12.0, 32.0);
+                                      });
+                                    },
+                                    borderRadius: BorderRadius.circular(20),
+                                    child: Container(
+                                      padding: const EdgeInsets.all(8),
+                                      child: const Icon(Icons.text_decrease),
+                                    ),
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        MouseRegion(
-                          cursor: SystemMouseCursors.click,
-                          child: Material(
-                            color: Colors.transparent,
-                            child: Tooltip(
-                              message: '增大字体',
-                              child: InkWell(
-                                onTap: () {
-                                  setState(() {
-                                    _fontSize = (_fontSize + 2).clamp(12.0, 32.0);
-                                  });
-                                },
-                                borderRadius: BorderRadius.circular(20),
-                                child: Container(
-                                  padding: const EdgeInsets.all(8),
-                                  child: const Icon(Icons.text_increase),
+                            const SizedBox(width: 8),
+                            MouseRegion(
+                              cursor: SystemMouseCursors.click,
+                              child: Material(
+                                color: Colors.transparent,
+                                child: Tooltip(
+                                  message: '增大字体',
+                                  child: InkWell(
+                                    onTap: () {
+                                      setState(() {
+                                        _fontSize = (_fontSize + 2).clamp(12.0, 32.0);
+                                      });
+                                    },
+                                    borderRadius: BorderRadius.circular(20),
+                                    child: Container(
+                                      padding: const EdgeInsets.all(8),
+                                      child: const Icon(Icons.text_increase),
+                                    ),
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
+                          ],
                         ),
-                      ],
+                      ),
                     ),
                   ),
-                ),
-              ),
-            ],
-          );
-        },
-      ),
+                ],
+              );
+            },
+          ),
+        );
+      },
     );
   }
 
@@ -330,23 +340,46 @@ class _LyricsPageState extends State<LyricsPage> {
             child: music.coverPath != null
                 ? ClipRRect(
                     borderRadius: BorderRadius.circular(8),
-                    child: Image.file(
-                      File(music.coverPath!),
-                      fit: BoxFit.cover,
+                    child: Hero(
+                      tag: 'cover-${music.id}',
+                      child: Image.file(
+                        File(music.coverPath!),
+                        fit: BoxFit.cover,
+                        gaplessPlayback: true,
+                        cacheWidth: 600,
+                        cacheHeight: 600,
+                        key: ValueKey(music.coverPath), // 使用路径作为key，防止重建
+                      ),
                     ),
                   )
                 : music.hasEmbeddedCover()
                     ? ClipRRect(
                         borderRadius: BorderRadius.circular(8),
-                        child: Image.memory(
-                          Uint8List.fromList(music.getCoverBytes()!),
-                          fit: BoxFit.cover,
+                        child: Hero(
+                          tag: 'embedded-cover-${music.id}',
+                          child: Image.memory(
+                            Uint8List.fromList(music.getCoverBytes()!),
+                            fit: BoxFit.cover,
+                            gaplessPlayback: true,
+                            cacheWidth: 600,
+                            cacheHeight: 600,
+                            key: ValueKey(music.id), // 使用ID作为key，防止重建
+                          ),
                         ),
                       )
-                    : Icon(
-                        Icons.music_note,
-                        size: 80,
-                        color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                    : Hero(
+                        tag: 'no-cover-${music.id}',
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.surfaceVariant,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Icon(
+                            Icons.music_note,
+                            size: 80,
+                            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                          ),
+                        ),
                       ),
           ),
           const SizedBox(height: 40),
