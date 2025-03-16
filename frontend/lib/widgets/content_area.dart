@@ -8,6 +8,7 @@ import 'package:slahser_player/models/playlist.dart';
 import 'package:slahser_player/widgets/settings_panel.dart';
 import 'package:slahser_player/widgets/playlist_view.dart';
 import 'dart:io';
+import '../enums/playback_state.dart';
 
 // 内容类型枚举
 enum ContentType {
@@ -30,6 +31,10 @@ class ContentArea extends StatefulWidget {
 class ContentAreaState extends State<ContentArea> {
   late ContentType _contentType;
   String? _selectedPlaylistId; // 当前选中的歌单ID
+  
+  // 排序相关的状态
+  String _sortField = 'title'; // 默认按标题排序
+  bool _sortAscending = true; // 默认升序排序
 
   @override
   void initState() {
@@ -424,89 +429,319 @@ class ContentAreaState extends State<ContentArea> {
     final audioPlayer = Provider.of<AudioPlayerService>(context);
     final playlistService = Provider.of<PlaylistService>(context);
     
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: musicFiles.length,
-      itemBuilder: (context, index) {
-        final music = musicFiles[index];
-        final isPlaying = audioPlayer.currentMusic?.id == music.id && 
-                         audioPlayer.playbackState == PlaybackState.playing;
-        final isFavorite = playlistService.isSongInFavorites(music.id);
-        
-        return Material(
-          color: Colors.transparent,
-          child: ListTile(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
+    // 根据当前排序字段和排序方向对音乐文件进行排序
+    List<MusicFile> sortedMusicFiles = List.from(musicFiles);
+    sortedMusicFiles.sort((a, b) {
+      int result;
+      switch (_sortField) {
+        case 'title':
+          result = a.title.compareTo(b.title);
+          break;
+        case 'artist':
+          result = a.artist.compareTo(b.artist);
+          break;
+        case 'album':
+          result = a.album.compareTo(b.album);
+          break;
+        case 'duration':
+          result = a.duration.compareTo(b.duration);
+          break;
+        default:
+          result = a.title.compareTo(b.title);
+      }
+      return _sortAscending ? result : -result;
+    });
+    
+    return Column(
+      children: [
+        // 表头
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.08),
+            border: Border(
+              bottom: BorderSide(
+                color: Theme.of(context).dividerColor.withOpacity(0.2),
+                width: 1
+              )
             ),
-            hoverColor: Theme.of(context).colorScheme.primary.withOpacity(0.15),
-            leading: Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceVariant,
-                borderRadius: BorderRadius.circular(4),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.02),
+                offset: const Offset(0, 1),
+                blurRadius: 2,
               ),
-              child: Icon(
-                isPlaying ? Icons.music_note : Icons.music_note,
-                size: 20,
-                color: isPlaying 
-                    ? Theme.of(context).colorScheme.primary 
-                    : Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
-              ),
-            ),
-            title: Text(
-              music.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: isPlaying ? Theme.of(context).colorScheme.primary : null,
-                fontWeight: isPlaying ? FontWeight.bold : null,
-              ),
-            ),
-            subtitle: Text(
-              '${music.artist} · ${music.album}',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: isPlaying 
-                        ? Theme.of(context).colorScheme.primary.withOpacity(0.7)
-                        : Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
-                  ),
-            ),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // 收藏按钮
-                IconButton(
-                  icon: Icon(
-                    isFavorite ? Icons.favorite : Icons.favorite_border,
-                    color: isFavorite ? Colors.red : null,
-                  ),
-                  onPressed: () {
-                    if (isFavorite) {
-                      playlistService.removeFromFavorites(music.id);
-                    } else {
-                      playlistService.addToFavorites(music);
-                    }
-                  },
+            ],
+          ),
+          child: Row(
+            children: [
+              const SizedBox(width: 56), // 给左侧图标留出空间
+              // 标题
+              Expanded(
+                flex: 3,
+                child: _buildHeaderCell(
+                  context, 
+                  '标题', 
+                  'title', 
+                  tooltip: '按标题排序'
                 ),
-                // 更多选项按钮
-                IconButton(
-                  icon: const Icon(Icons.more_vert),
-                  onPressed: () {
-                    _showMusicOptions(context, music);
-                  },
+              ),
+              // 艺术家
+              Expanded(
+                flex: 2,
+                child: _buildHeaderCell(
+                  context, 
+                  '艺术家', 
+                  'artist', 
+                  tooltip: '按艺术家排序'
                 ),
-              ],
-            ),
-            onTap: () {
-              _playSong(music);
+              ),
+              // 专辑
+              Expanded(
+                flex: 2,
+                child: _buildHeaderCell(
+                  context, 
+                  '专辑', 
+                  'album',
+                  tooltip: '按专辑排序'
+                ),
+              ),
+              // 时长
+              Expanded(
+                child: _buildHeaderCell(
+                  context, 
+                  '时长', 
+                  'duration',
+                  tooltip: '按时长排序',
+                  textAlign: TextAlign.right
+                ),
+              ),
+              const SizedBox(width: 100), // 留出右侧操作按钮的空间
+            ],
+          ),
+        ),
+        // 音乐列表
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.all(0), // 移除默认内边距
+            itemCount: sortedMusicFiles.length,
+            itemBuilder: (context, index) {
+              final music = sortedMusicFiles[index];
+              final isPlaying = audioPlayer.currentMusic?.id == music.id && 
+                              audioPlayer.playbackState == PlaybackState.playing;
+              final isFavorite = playlistService.isSongInFavorites(music.id);
+              
+              return Column(
+                children: [
+                  Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: () {
+                        _playSong(music);
+                      },
+                      hoverColor: Theme.of(context).colorScheme.primary.withOpacity(0.15),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        child: Row(
+                          children: [
+                            // 图标区域
+                            Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                color: Theme.of(context).colorScheme.surfaceVariant,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Icon(
+                                isPlaying ? Icons.music_note : Icons.music_note,
+                                size: 20,
+                                color: isPlaying 
+                                    ? Theme.of(context).colorScheme.primary 
+                                    : Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            // 标题
+                            Expanded(
+                              flex: 3,
+                              child: Text(
+                                music.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: isPlaying ? Theme.of(context).colorScheme.primary : null,
+                                  fontWeight: isPlaying ? FontWeight.bold : null,
+                                ),
+                              ),
+                            ),
+                            // 艺术家
+                            Expanded(
+                              flex: 2,
+                              child: Text(
+                                music.artist,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                      color: isPlaying 
+                                          ? Theme.of(context).colorScheme.primary.withOpacity(0.7)
+                                          : Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                                    ),
+                              ),
+                            ),
+                            // 专辑
+                            Expanded(
+                              flex: 2,
+                              child: Text(
+                                music.album,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                      color: isPlaying 
+                                          ? Theme.of(context).colorScheme.primary.withOpacity(0.7)
+                                          : Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                                    ),
+                              ),
+                            ),
+                            // 时长
+                            Expanded(
+                              child: Container(
+                                alignment: Alignment.centerRight, // 确保内容右对齐
+                                padding: const EdgeInsets.only(right: 8.0),
+                                child: Text(
+                                  _formatDuration(music.duration),
+                                  textAlign: TextAlign.right,
+                                  style: TextStyle(
+                                    color: isPlaying
+                                        ? Theme.of(context).colorScheme.primary.withOpacity(0.7)
+                                        : Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            // 操作按钮区域
+                            const SizedBox(width: 8),
+                            // 收藏按钮
+                            IconButton(
+                              icon: Icon(
+                                isFavorite ? Icons.favorite : Icons.favorite_border,
+                                color: isFavorite ? Colors.red : null,
+                                size: 20,
+                              ),
+                              onPressed: () {
+                                if (isFavorite) {
+                                  playlistService.removeFromFavorites(music.id);
+                                } else {
+                                  playlistService.addToFavorites(music);
+                                }
+                              },
+                            ),
+                            // 更多选项按钮
+                            IconButton(
+                              icon: const Icon(Icons.more_vert, size: 20),
+                              onPressed: () {
+                                _showMusicOptions(context, music);
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  // 分隔线
+                  if (index < sortedMusicFiles.length - 1)
+                    Divider(
+                      height: 1,
+                      thickness: 1,
+                      indent: 72,
+                      endIndent: 16,
+                      color: Theme.of(context).dividerColor.withOpacity(0.1),
+                    ),
+                ],
+              );
             },
           ),
-        );
-      },
+        ),
+      ],
     );
+  }
+  
+  // 表头单元格
+  Widget _buildHeaderCell(
+    BuildContext context, 
+    String title, 
+    String fieldName, {
+    String? tooltip,
+    TextAlign textAlign = TextAlign.left
+  }) {
+    final bool isActive = _sortField == fieldName;
+    
+    return InkWell(
+      onTap: () {
+        setState(() {
+          if (_sortField == fieldName) {
+            // 如果已经按照这个字段排序，则切换排序方向
+            _sortAscending = !_sortAscending;
+          } else {
+            // 否则，切换排序字段并设置为升序
+            _sortField = fieldName;
+            _sortAscending = true;
+          }
+        });
+      },
+      child: Tooltip(
+        message: tooltip ?? '排序',
+        child: Padding(
+          padding: EdgeInsets.only(
+            top: 8, 
+            bottom: 8, 
+            left: 4, 
+            right: textAlign == TextAlign.right ? 8.0 : 4.0 // 时长列增加右侧内边距
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: textAlign == TextAlign.right 
+                ? MainAxisAlignment.end 
+                : MainAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: textAlign == TextAlign.right 
+                      ? MainAxisAlignment.end 
+                      : MainAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+                        color: isActive 
+                          ? Theme.of(context).colorScheme.primary 
+                          : Theme.of(context).colorScheme.onSurface,
+                      ),
+                      textAlign: textAlign,
+                    ),
+                    if (isActive)
+                      Icon(
+                        _sortAscending ? Icons.arrow_upward : Icons.arrow_downward,
+                        size: 16,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+  
+  // 格式化时长
+  String _formatDuration(Duration duration) {
+    final minutes = duration.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final seconds = duration.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$minutes:$seconds';
   }
   
   void _importMusicFiles(BuildContext context) {

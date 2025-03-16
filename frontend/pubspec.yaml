@@ -64,6 +64,10 @@ dependencies:
   palette_generator: ^0.3.3+2
   audio_video_progress_bar: ^2.0.1
   url_launcher: ^6.1.14
+  # 音频元数据提取
+  flutter_media_metadata: ^1.0.0+1
+  gbk_codec: ^0.4.0
+  rxdart: ^0.27.7
 
 dev_dependencies:
   flutter_test:

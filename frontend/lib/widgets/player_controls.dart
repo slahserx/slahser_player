@@ -6,6 +6,8 @@ import 'package:slahser_player/models/music_file.dart';
 import 'package:slahser_player/widgets/equalizer_dialog.dart';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:typed_data';
+import '../enums/playback_state.dart';
 
 // 音量滑块组件 - 无状态实现，完全依赖AudioPlayerService
 class VolumeSlider extends StatelessWidget {
@@ -184,11 +186,19 @@ class PlayerControls extends StatelessWidget {
                                             fit: BoxFit.cover,
                                           ),
                                         )
-                                      : Icon(
-                                          Icons.music_note,
-                                          size: 24,
-                                          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
-                                        ),
+                                      : currentMusic?.hasEmbeddedCover() ?? false
+                                          ? ClipRRect(
+                                              borderRadius: BorderRadius.circular(4),
+                                              child: Image.memory(
+                                                Uint8List.fromList(currentMusic!.getCoverBytes()!),
+                                                fit: BoxFit.cover,
+                                              ),
+                                            )
+                                          : Icon(
+                                              Icons.music_note,
+                                              size: 24,
+                                              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                                            ),
                                 ),
                               ),
                             ),

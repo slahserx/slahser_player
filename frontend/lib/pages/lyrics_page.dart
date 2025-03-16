@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:slahser_player/services/audio_player_service.dart';
 import 'package:slahser_player/models/music_file.dart';
+import '../enums/playback_state.dart';
 import 'dart:io';
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 class LyricsPage extends StatefulWidget {
   final MusicFile music;
@@ -333,11 +335,19 @@ class _LyricsPageState extends State<LyricsPage> {
                       fit: BoxFit.cover,
                     ),
                   )
-                : Icon(
-                    Icons.music_note,
-                    size: 80,
-                    color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
-                  ),
+                : music.hasEmbeddedCover()
+                    ? ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.memory(
+                          Uint8List.fromList(music.getCoverBytes()!),
+                          fit: BoxFit.cover,
+                        ),
+                      )
+                    : Icon(
+                        Icons.music_note,
+                        size: 80,
+                        color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                      ),
           ),
           const SizedBox(height: 40),
           // 歌曲信息

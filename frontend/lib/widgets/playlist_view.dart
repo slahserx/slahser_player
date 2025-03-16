@@ -5,6 +5,7 @@ import 'package:slahser_player/models/playlist.dart';
 import 'package:slahser_player/models/music_file.dart';
 import 'package:slahser_player/services/audio_player_service.dart';
 import 'package:slahser_player/services/playlist_service.dart';
+import '../enums/playback_state.dart';
 
 class PlaylistView extends StatefulWidget {
   final Playlist playlist;

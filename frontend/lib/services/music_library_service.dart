@@ -45,26 +45,55 @@ class MusicLibraryService extends ChangeNotifier {
   Future<void> _processMusicFiles(List<String> filePaths) async {
     if (filePaths.isEmpty) return;
     
+    _isLoading = true;
+    notifyListeners();
+    
     List<MusicFile> newFiles = [];
+    int processedCount = 0;
+    int totalFiles = filePaths.length;
     
     for (String filePath in filePaths) {
+      // 规范化文件路径
+      String normalizedPath = filePath.replaceAll('\\', '/');
+      
+      processedCount++;
+      if (processedCount % 5 == 0 || processedCount == totalFiles) {
+        debugPrint('正在处理文件: $processedCount / $totalFiles');
+        // 更新UI但保持loading状态
+        notifyListeners();
+      }
+      
       // 检查文件是否已存在
-      bool exists = _musicFiles.any((file) => file.filePath == filePath);
+      bool exists = _musicFiles.any((file) => file.filePath == normalizedPath);
       if (!exists) {
         try {
-          MusicFile musicFile = await MusicFile.fromPath(filePath);
-          newFiles.add(musicFile);
+          // 验证文件是否存在且可读
+          final file = File(normalizedPath);
+          if (await file.exists()) {
+            debugPrint('开始解析文件: $normalizedPath');
+            MusicFile musicFile = await MusicFile.fromPath(normalizedPath);
+            newFiles.add(musicFile);
+            debugPrint('文件解析完成: ${musicFile.title} - ${musicFile.artist}');
+          } else {
+            debugPrint('文件不存在: $normalizedPath');
+          }
         } catch (e) {
-          print('处理音乐文件失败: $filePath, 错误: $e');
+          debugPrint('处理音乐文件失败: $normalizedPath, 错误: $e');
         }
+      } else {
+        debugPrint('文件已存在，跳过: $normalizedPath');
       }
     }
+    
+    debugPrint('处理完成，新增 ${newFiles.length} 个文件');
     
     if (newFiles.isNotEmpty) {
       _musicFiles.addAll(newFiles);
       await _saveLibrary();
-      notifyListeners();
     }
+    
+    _isLoading = false;
+    notifyListeners();
   }
   
   // 保存音乐库

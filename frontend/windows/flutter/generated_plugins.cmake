@@ -3,8 +3,10 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
+  flutter_media_metadata
   just_audio_windows
   screen_retriever
+  url_launcher_windows
   window_manager
 )
 
