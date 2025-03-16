@@ -173,90 +173,106 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
         (contentType == ContentType.playlists && 
          widget.selectedContentType == ContentType.playlist);
     
-    return InkWell(
-      onTap: () {
-        // 如果点击的是歌单按钮，切换歌单列表的展开状态
-        if (contentType == ContentType.playlists) {
-          setState(() {
-            _isPlaylistExpanded = !_isPlaylistExpanded;
-          });
-        }
-        widget.onContentTypeSelected(contentType);
-      },
-      hoverColor: Theme.of(context).colorScheme.primary.withOpacity(0.15),
-      borderRadius: BorderRadius.circular(8),
-      child: Container(
-        height: 44,
-        margin: EdgeInsets.symmetric(
-          horizontal: _isCollapsed ? 4 : 8,
-          vertical: 2,
-        ),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? Theme.of(context).colorScheme.primary.withOpacity(0.1)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Padding(
-          padding: EdgeInsets.symmetric(horizontal: _isCollapsed ? 8 : 16),
-          child: Row(
-            mainAxisAlignment: _isCollapsed 
-                ? MainAxisAlignment.center 
-                : MainAxisAlignment.start,
-            children: [
-              Icon(
-                icon,
-                color: isSelected
-                    ? Theme.of(context).colorScheme.primary
-                    : Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
-                size: 20,
-              ),
-              if (!_isCollapsed) ...[
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    title,
-                    style: TextStyle(
-                      color: isSelected
-                          ? Theme.of(context).colorScheme.primary
-                          : Theme.of(context).colorScheme.onSurface,
-                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                const Spacer(),
-                if (showExpand && contentType == ContentType.playlists)
+    return HoverWidget(
+      builder: (context, isHovered) {
+        final Color bgColor = isSelected
+            ? Theme.of(context).colorScheme.primary.withOpacity(0.1)
+            : isHovered 
+                ? Theme.of(context).colorScheme.primary.withOpacity(0.08)
+                : Colors.transparent;
+                
+        final Color iconColor = isSelected || isHovered
+            ? Theme.of(context).colorScheme.primary
+            : Theme.of(context).colorScheme.onSurface.withOpacity(0.7);
+        
+        final Color textColor = isSelected || isHovered
+            ? Theme.of(context).colorScheme.primary
+            : Theme.of(context).colorScheme.onSurface;
+        
+        return GestureDetector(
+          onTap: () {
+            // 如果点击的是歌单按钮，切换歌单列表的展开状态
+            if (contentType == ContentType.playlists) {
+              setState(() {
+                _isPlaylistExpanded = !_isPlaylistExpanded;
+              });
+            }
+            widget.onContentTypeSelected(contentType);
+          },
+          child: Container(
+            height: 44,
+            margin: EdgeInsets.symmetric(
+              horizontal: _isCollapsed ? 4 : 8,
+              vertical: 2,
+            ),
+            decoration: BoxDecoration(
+              color: bgColor,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: _isCollapsed ? 8 : 16),
+              child: Row(
+                mainAxisAlignment: _isCollapsed 
+                    ? MainAxisAlignment.center 
+                    : MainAxisAlignment.start,
+                children: [
                   Icon(
-                    _isPlaylistExpanded
-                        ? Icons.expand_less
-                        : Icons.expand_more,
+                    icon,
+                    color: iconColor,
                     size: 20,
-                    color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
                   ),
-              ],
-            ],
+                  if (!_isCollapsed) ...[
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: TextStyle(
+                          color: textColor,
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const Spacer(),
+                    if (showExpand && contentType == ContentType.playlists)
+                      Icon(
+                        _isPlaylistExpanded
+                            ? Icons.expand_less
+                            : Icons.expand_more,
+                        size: 20,
+                        color: iconColor,
+                      ),
+                  ],
+                ],
+              ),
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
   Widget _buildCollapseButton(BuildContext context) {
-    return InkWell(
-      onTap: _toggleCollapsed,
-      hoverColor: Theme.of(context).colorScheme.primary.withOpacity(0.15),
-      borderRadius: BorderRadius.circular(8),
-      child: Container(
-        height: 40,
-        width: 40,
-        margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Icon(
-          _isCollapsed ? Icons.chevron_right : Icons.chevron_left,
-          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+    // 使用固定颜色，不随悬停状态改变
+    final Color iconColor = Theme.of(context).colorScheme.onSurface.withOpacity(0.7);
+    
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: _toggleCollapsed,
+        child: Container(
+          height: 40,
+          width: 40,
+          margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            // 使用透明背景，不随悬停状态改变
+            color: Colors.transparent,
+          ),
+          child: Icon(
+            _isCollapsed ? Icons.chevron_right : Icons.chevron_left,
+            color: iconColor,
+          ),
         ),
       ),
     );
@@ -281,61 +297,100 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
             final isSelected = widget.selectedContentType == ContentType.playlist && 
                               widget.selectedPlaylistId == playlist.id;
             
-            return InkWell(
-              onTap: () {
-                widget.onPlaylistSelected(playlist.id);
-              },
-              hoverColor: Theme.of(context).colorScheme.primary.withOpacity(0.08),
-              child: Container(
-                padding: EdgeInsets.symmetric(
-                  horizontal: _isCollapsed ? 8 : 16,
-                  vertical: 6,
-                ),
-                margin: const EdgeInsets.only(left: 16),
-                width: _isCollapsed ? 40 : 170,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: isSelected 
-                      ? Theme.of(context).colorScheme.primary.withOpacity(0.12)
-                      : Colors.transparent,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 24,
-                      height: 24,
-                      alignment: Alignment.center,
-                      child: Icon(
-                        Icons.queue_music,
-                        size: 16,
-                        color: isSelected
-                            ? Theme.of(context).colorScheme.primary
-                            : Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
-                      ),
+            return HoverWidget(
+              builder: (context, isHovered) {
+                final Color bgColor = isSelected
+                    ? Theme.of(context).colorScheme.primary.withOpacity(0.12)
+                    : isHovered 
+                        ? Theme.of(context).colorScheme.primary.withOpacity(0.05)
+                        : Colors.transparent;
+                        
+                final Color iconColor = isSelected || isHovered
+                    ? Theme.of(context).colorScheme.primary
+                    : Theme.of(context).colorScheme.onSurface.withOpacity(0.7);
+                
+                final Color textColor = isSelected || isHovered
+                    ? Theme.of(context).colorScheme.primary
+                    : Theme.of(context).colorScheme.onSurface;
+                    
+                final FontWeight fontWeight = isSelected || isHovered
+                    ? FontWeight.bold 
+                    : FontWeight.normal;
+                
+                return GestureDetector(
+                  onTap: () {
+                    widget.onPlaylistSelected(playlist.id);
+                  },
+                  child: Container(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: _isCollapsed ? 8 : 16,
+                      vertical: 6,
                     ),
-                    if (!_isCollapsed) ...[
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          playlist.name,
-                          style: TextStyle(
-                            color: isSelected
-                                ? Theme.of(context).colorScheme.primary
-                                : Theme.of(context).colorScheme.onSurface,
-                            fontWeight: isSelected ? FontWeight.bold : null,
+                    margin: const EdgeInsets.only(left: 16),
+                    width: _isCollapsed ? 40 : 170,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: bgColor,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 24,
+                          height: 24,
+                          alignment: Alignment.center,
+                          child: Icon(
+                            Icons.queue_music,
+                            size: 16,
+                            color: iconColor,
                           ),
-                          overflow: TextOverflow.ellipsis,
                         ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
+                        if (!_isCollapsed) ...[
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              playlist.name,
+                              style: TextStyle(
+                                color: textColor,
+                                fontWeight: fontWeight,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                );
+              },
             );
           }).toList(),
         );
       },
+    );
+  }
+}
+
+// 鼠标悬停检测组件
+class HoverWidget extends StatefulWidget {
+  final Widget Function(BuildContext, bool isHovered) builder;
+  
+  const HoverWidget({super.key, required this.builder});
+  
+  @override
+  State<HoverWidget> createState() => _HoverWidgetState();
+}
+
+class _HoverWidgetState extends State<HoverWidget> {
+  bool isHovered = false;
+  
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => isHovered = true),
+      onExit: (_) => setState(() => isHovered = false),
+      child: widget.builder(context, isHovered),
     );
   }
 } 

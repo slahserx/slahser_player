@@ -126,6 +126,7 @@ class MusicFile {
     debugPrint('最终元数据: 标题="$title", 艺术家="$artist", 专辑="$album", 时长=${duration.inSeconds}秒');
     
     // 查找歌词文件
+    String? lyricsFilePath;
     try {
       final lyricsPath = '${filePath.substring(0, filePath.lastIndexOf('.'))}';
       List<String> lyricsExtensions = ['.lrc', '.LRC'];
@@ -133,6 +134,7 @@ class MusicFile {
         final lrcFilePath = '$lyricsPath$ext';
         if (await File(lrcFilePath).exists()) {
           debugPrint('找到歌词文件: $lrcFilePath');
+          lyricsFilePath = lrcFilePath;
           break;
         }
       }
@@ -184,6 +186,7 @@ class MusicFile {
       isFavorite: false,
       playCount: 0,
       lastPlayed: null,
+      lyricsPath: lyricsFilePath,
     );
   }
   

@@ -14,6 +14,32 @@ import '../enums/playback_state.dart';
 import 'dart:typed_data';
 import 'package:slahser_player/utils/page_transitions.dart';
 import '../enums/content_type.dart';
+import 'package:slahser_player/services/settings_service.dart';
+import 'dart:convert';
+
+// 鼠标悬停检测组件
+class HoverWidget extends StatefulWidget {
+  final Widget Function(BuildContext, bool isHovered) builder;
+  
+  const HoverWidget({super.key, required this.builder});
+  
+  @override
+  State<HoverWidget> createState() => _HoverWidgetState();
+}
+
+class _HoverWidgetState extends State<HoverWidget> {
+  bool isHovered = false;
+  
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => isHovered = true),
+      onExit: (_) => setState(() => isHovered = false),
+      child: widget.builder(context, isHovered),
+    );
+  }
+}
 
 // 定义一个自定义通知，用于告诉HomePage切换到特定歌单
 class PlaylistSelectedNotification extends Notification {
@@ -316,27 +342,27 @@ class _ContentAreaState extends State<ContentArea> {
       children: [
         // 表头
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          margin: const EdgeInsets.symmetric(horizontal: 16),
+          padding: const EdgeInsets.symmetric(vertical: 10),
           decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.08),
+            color: Theme.of(context).colorScheme.surface,
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(8),
+              topRight: Radius.circular(8),
+            ),
             border: Border(
               bottom: BorderSide(
                 color: Theme.of(context).dividerColor.withOpacity(0.2),
                 width: 1
               )
             ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.02),
-                offset: const Offset(0, 1),
-                blurRadius: 2,
-              ),
-            ],
           ),
           child: Row(
             children: [
-              const SizedBox(width: 56), // 给左侧图标留出空间
               const SizedBox(width: 30), // 给序号列留出空间
+              const SizedBox(width: 8), // 与行内容的间距对齐
+              const SizedBox(width: 40), // 给封面图片留出空间
+              const SizedBox(width: 16), // 与行内容的间距对齐
               // 标题
               Expanded(
                 flex: 3,
@@ -368,7 +394,8 @@ class _ContentAreaState extends State<ContentArea> {
                 ),
               ),
               // 时长
-              Expanded(
+              SizedBox(
+                width: 76,
                 child: _buildHeaderCell(
                   context, 
                   '时长', 
@@ -377,14 +404,14 @@ class _ContentAreaState extends State<ContentArea> {
                   textAlign: TextAlign.right
                 ),
               ),
-              const SizedBox(width: 100), // 留出右侧操作按钮的空间
+              const SizedBox(width: 40), // 给更多按钮留出空间
             ],
           ),
         ),
         // 音乐列表
         Expanded(
           child: ListView.builder(
-            padding: const EdgeInsets.all(0), // 移除默认内边距
+            padding: const EdgeInsets.symmetric(horizontal: 16),
             itemCount: sortedMusicFiles.length,
             itemBuilder: (context, index) {
               final music = sortedMusicFiles[index];
@@ -399,125 +426,144 @@ class _ContentAreaState extends State<ContentArea> {
                       onTap: () {
                         _playSong(music);
                       },
-                      hoverColor: Theme.of(context).colorScheme.primary.withOpacity(0.15),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                        child: Row(
-                          children: [
-                            // 序号列
-                            SizedBox(
-                              width: 30,
-                              child: Text(
-                                '${index + 1}',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  color: isPlaying 
-                                      ? Theme.of(context).colorScheme.primary
-                                      : Theme.of(context).colorScheme.onSurfaceVariant,
-                                  fontWeight: isPlaying ? FontWeight.bold : null,
+                      borderRadius: BorderRadius.circular(6),
+                      hoverColor: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(6),
+                          color: isPlaying 
+                              ? Theme.of(context).colorScheme.primary.withOpacity(0.05)
+                              : Colors.transparent,
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          child: Row(
+                            children: [
+                              // 序号列
+                              Container(
+                                width: 30,
+                                alignment: Alignment.center,
+                                child: isPlaying
+                                    ? Icon(
+                                        Icons.equalizer,
+                                        size: 16,
+                                        color: Theme.of(context).colorScheme.primary,
+                                      )
+                                    : Text(
+                                        '${index + 1}',
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                              ),
+                              const SizedBox(width: 8),
+                              // 封面图片
+                              Container(
+                                width: 40,
+                                height: 40,
+                                decoration: BoxDecoration(
+                                  color: Theme.of(context).colorScheme.surfaceVariant,
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(
+                                    color: Theme.of(context).colorScheme.outline.withOpacity(0.1),
+                                    width: 1,
+                                  ),
+                                ),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(4),
+                                  child: _buildCoverImage(music, isPlaying),
                                 ),
                               ),
-                            ),
-                            const SizedBox(width: 8),
-                            // 封面图片
-                            Container(
-                              width: 40,
-                              height: 40,
-                              decoration: BoxDecoration(
-                                color: Theme.of(context).colorScheme.surfaceVariant,
-                                borderRadius: BorderRadius.circular(4),
-                                border: Border.all(
-                                  color: Theme.of(context).colorScheme.outline.withOpacity(0.1),
-                                  width: 1,
-                                ),
-                              ),
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(4),
-                                child: _buildCoverImage(music, isPlaying),
-                              ),
-                            ),
-                            const SizedBox(width: 16),
-                            // 标题
-                            Expanded(
-                              flex: 3,
-                              child: Text(
-                                music.title,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: isPlaying ? Theme.of(context).colorScheme.primary : null,
-                                  fontWeight: isPlaying ? FontWeight.bold : null,
-                                ),
-                              ),
-                            ),
-                            // 艺术家
-                            Expanded(
-                              flex: 2,
-                              child: Text(
-                                music.artist,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                      color: isPlaying 
-                                          ? Theme.of(context).colorScheme.primary.withOpacity(0.7)
-                                          : Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
-                                    ),
-                              ),
-                            ),
-                            // 专辑
-                            Expanded(
-                              flex: 2,
-                              child: Text(
-                                music.album,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                      color: isPlaying 
-                                          ? Theme.of(context).colorScheme.primary.withOpacity(0.7)
-                                          : Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
-                                    ),
-                              ),
-                            ),
-                            // 时长
-                            Expanded(
-                              child: Container(
-                                alignment: Alignment.centerRight, // 确保内容右对齐
-                                padding: const EdgeInsets.only(right: 8.0),
+                              const SizedBox(width: 16),
+                              // 标题
+                              Expanded(
+                                flex: 3,
                                 child: Text(
-                                  _formatDuration(music.duration),
-                                  textAlign: TextAlign.right,
+                                  music.title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
-                                    color: isPlaying
-                                        ? Theme.of(context).colorScheme.primary.withOpacity(0.7)
-                                        : Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
-                                    fontSize: 12,
+                                    color: isPlaying ? Theme.of(context).colorScheme.primary : null,
+                                    fontWeight: isPlaying ? FontWeight.bold : null,
+                                    fontSize: 14,
                                   ),
                                 ),
                               ),
-                            ),
-                            // 操作按钮区域
-                            const SizedBox(width: 8),
-                            // 更多选项按钮
-                            IconButton(
-                              icon: const Icon(Icons.more_vert, size: 20),
-                              onPressed: () {
-                                _showMusicOptions(context, music);
-                              },
-                            ),
-                          ],
+                              // 艺术家
+                              Expanded(
+                                flex: 2,
+                                child: Text(
+                                  music.artist,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                        color: isPlaying 
+                                            ? Theme.of(context).colorScheme.primary.withOpacity(0.7)
+                                            : Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                                        fontSize: 13,
+                                      ),
+                                ),
+                              ),
+                              // 专辑
+                              Expanded(
+                                flex: 2,
+                                child: Text(
+                                  music.album,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                        color: isPlaying 
+                                            ? Theme.of(context).colorScheme.primary.withOpacity(0.7)
+                                            : Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                                        fontSize: 13,
+                                      ),
+                                ),
+                              ),
+                              // 时长
+                              SizedBox(
+                                width: 76,
+                                child: Container(
+                                  alignment: Alignment.centerRight, // 确保内容右对齐
+                                  child: Text(
+                                    _formatDuration(music.duration),
+                                    textAlign: TextAlign.right,
+                                    style: TextStyle(
+                                      color: isPlaying
+                                          ? Theme.of(context).colorScheme.primary.withOpacity(0.7)
+                                          : Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                                      fontSize: 12,
+                                      fontFamily: 'monospace',
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              // 操作按钮区域
+                              SizedBox(
+                                width: 40,
+                                child: IconButton(
+                                  iconSize: 18,
+                                  visualDensity: VisualDensity.compact,
+                                  icon: Icon(
+                                    Icons.more_vert,
+                                    color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                                  ),
+                                  onPressed: () {
+                                    _showMusicOptions(context, music);
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
                   ),
-                  // 分隔线
+                  // 分隔线 - 移除，改用圆角和间距来区分行
                   if (index < sortedMusicFiles.length - 1)
-                    Divider(
-                      height: 1,
-                      thickness: 1,
-                      indent: 72,
-                      endIndent: 16,
-                      color: Theme.of(context).dividerColor.withOpacity(0.1),
-                    ),
+                    const SizedBox(height: 2),
                 ],
               );
             },
@@ -537,64 +583,82 @@ class _ContentAreaState extends State<ContentArea> {
   }) {
     final bool isActive = _sortField == fieldName;
     
-    return InkWell(
-      onTap: () {
-        setState(() {
-          if (_sortField == fieldName) {
-            // 如果已经按照这个字段排序，则切换排序方向
-            _sortAscending = !_sortAscending;
-          } else {
-            // 否则，切换排序字段并设置为升序
-            _sortField = fieldName;
-            _sortAscending = true;
-          }
-        });
-      },
-      child: Tooltip(
-        message: tooltip ?? '排序',
-        child: Padding(
-          padding: EdgeInsets.only(
-            top: 8, 
-            bottom: 8, 
-            left: 4, 
-            right: textAlign == TextAlign.right ? 8.0 : 4.0 // 时长列增加右侧内边距
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: textAlign == TextAlign.right 
-                ? MainAxisAlignment.end 
-                : MainAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  mainAxisAlignment: textAlign == TextAlign.right 
-                      ? MainAxisAlignment.end 
-                      : MainAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: TextStyle(
-                        fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-                        color: isActive 
-                          ? Theme.of(context).colorScheme.primary 
-                          : Theme.of(context).colorScheme.onSurface,
-                      ),
-                      textAlign: textAlign,
-                    ),
-                    if (isActive)
-                      Icon(
+    return HoverWidget(
+      builder: (context, isHovered) {
+        final Color textColor = isActive 
+            ? Theme.of(context).colorScheme.primary 
+            : isHovered
+                ? Theme.of(context).colorScheme.onSurface
+                : Theme.of(context).colorScheme.onSurface.withOpacity(0.75);
+                
+        return GestureDetector(
+          onTap: () {
+            setState(() {
+              if (_sortField == fieldName) {
+                // 如果已经按照这个字段排序，则切换排序方向
+                _sortAscending = !_sortAscending;
+              } else {
+                // 否则，切换排序字段并设置为升序
+                _sortField = fieldName;
+                _sortAscending = true;
+              }
+            });
+          },
+          child: Tooltip(
+            message: tooltip ?? '排序',
+            child: Container(
+              padding: EdgeInsets.only(
+                top: 6, 
+                bottom: 6, 
+                left: fieldName == 'title' ? 0 : 8, // 标题列不需要左内边距
+                right: textAlign == TextAlign.right ? 0 : 8.0 // 时长列不需要右内边距
+              ),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(4),
+                color: isHovered
+                    ? Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5)
+                    : Colors.transparent,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: textAlign == TextAlign.right 
+                    ? MainAxisAlignment.end 
+                    : MainAxisAlignment.start,
+                children: [
+                  if (isActive && textAlign != TextAlign.right)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 4),
+                      child: Icon(
                         _sortAscending ? Icons.arrow_upward : Icons.arrow_downward,
-                        size: 16,
+                        size: 14,
                         color: Theme.of(context).colorScheme.primary,
                       ),
-                  ],
-                ),
+                    ),
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontWeight: isActive ? FontWeight.bold : FontWeight.w500,
+                      fontSize: 13,
+                      letterSpacing: 0.3,
+                      color: textColor,
+                    ),
+                    textAlign: textAlign,
+                  ),
+                  if (isActive && textAlign == TextAlign.right)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 4),
+                      child: Icon(
+                        _sortAscending ? Icons.arrow_upward : Icons.arrow_downward,
+                        size: 14,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    ),
+                ],
               ),
-            ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
   
@@ -833,7 +897,7 @@ class _ContentAreaState extends State<ContentArea> {
                       ),
                 ),
         );
-      }
+      },
     );
   }
 
@@ -1121,60 +1185,74 @@ class _ContentAreaState extends State<ContentArea> {
                 .where((music) => music.artist == artist)
                 .toList();
             
-            return InkWell(
-              onTap: () {
-                // 显示歌手详情页面
-                _showArtistDetailPage(context, artist, artistSongs);
-              },
-              borderRadius: BorderRadius.circular(8),
-              child: Column(
-                children: [
-                  // 歌手头像
-                  Expanded(
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.surfaceVariant,
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: Theme.of(context).colorScheme.outline.withOpacity(0.1),
-                          width: 1,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.1),
-                            blurRadius: 4,
-                            offset: const Offset(0, 2),
+            return HoverWidget(
+              builder: (context, isHovered) {
+                return GestureDetector(
+                  onTap: () {
+                    // 显示歌手详情页面
+                    _showArtistDetailPage(context, artist, artistSongs);
+                  },
+                  child: Column(
+                    children: [
+                      // 歌手头像
+                      Expanded(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.surfaceVariant,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: isHovered 
+                                  ? Theme.of(context).colorScheme.primary.withOpacity(0.3) 
+                                  : Theme.of(context).colorScheme.outline.withOpacity(0.1),
+                              width: isHovered ? 2 : 1,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: isHovered 
+                                    ? Theme.of(context).colorScheme.primary.withOpacity(0.2)
+                                    : Colors.black.withOpacity(0.1),
+                                blurRadius: 4,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
-                      child: Icon(
-                        Icons.person,
-                        size: 80,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.4),
-                      ),
-                    ),
-                  ),
-                  // 歌手名称
-                  Text(
-                    artist,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w500,
+                          child: Icon(
+                            Icons.person,
+                            size: 80,
+                            color: isHovered
+                                ? Theme.of(context).colorScheme.primary.withOpacity(0.6)
+                                : Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.4),
+                          ),
                         ),
-                    textAlign: TextAlign.center,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                      ),
+                      // 歌手名称
+                      Text(
+                        artist,
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              fontWeight: isHovered ? FontWeight.bold : FontWeight.w500,
+                              color: isHovered 
+                                  ? Theme.of(context).colorScheme.primary
+                                  : Theme.of(context).colorScheme.onSurface,
+                            ),
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      // 歌曲数量
+                      Text(
+                        '${artistSongs.length}首歌曲',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: isHovered
+                                  ? Theme.of(context).colorScheme.primary.withOpacity(0.7)
+                                  : Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+                              height: 1.1,
+                            ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
                   ),
-                  // 歌曲数量
-                  Text(
-                    '${artistSongs.length}首歌曲',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
-                          height: 1.1,
-                        ),
-                    textAlign: TextAlign.center,
-                  ),
-                ],
-              ),
+                );
+              },
             );
           },
         );
@@ -1240,79 +1318,120 @@ class _ContentAreaState extends State<ContentArea> {
             // 获取专辑的艺术家
             final albumArtist = albumSongs.isNotEmpty ? albumSongs.first.artist : '未知艺术家';
             
-            return InkWell(
-              onTap: () {
-                // 显示专辑详情页面
-                _showAlbumDetailPage(context, album, albumArtist, albumSongs);
-              },
-              borderRadius: BorderRadius.circular(8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // 专辑封面
-                  Expanded(
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.surfaceVariant,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: Theme.of(context).colorScheme.outline.withOpacity(0.1),
-                          width: 1,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.1),
-                            blurRadius: 4,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: firstSong?.embeddedCoverBytes != null
-                            ? Image.memory(
-                                Uint8List.fromList(firstSong!.embeddedCoverBytes!),
-                                fit: BoxFit.cover,
-                              )
-                            : Center(
-                                child: Icon(
-                                  Icons.album,
-                                  size: 80,
-                                  color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.4),
+            return HoverWidget(
+              builder: (context, isHovered) {
+                return GestureDetector(
+                  onTap: () {
+                    // 显示专辑详情页面
+                    _showAlbumDetailPage(context, album, albumArtist, albumSongs);
+                  },
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // 专辑封面
+                      Expanded(
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            // 专辑封面背景
+                            Container(
+                              decoration: BoxDecoration(
+                                color: Theme.of(context).colorScheme.surfaceVariant,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: Theme.of(context).colorScheme.outline.withOpacity(0.1),
+                                  width: 1,
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.1),
+                                    blurRadius: 4,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: firstSong?.embeddedCoverBytes != null
+                                    ? Image.memory(
+                                        Uint8List.fromList(firstSong!.embeddedCoverBytes!),
+                                        fit: BoxFit.cover,
+                                      )
+                                    : Center(
+                                        child: Icon(
+                                          Icons.album,
+                                          size: 80,
+                                          color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.4),
+                                        ),
+                                      ),
+                              ),
+                            ),
+                            // 悬停时显示的播放按钮
+                            if (isHovered)
+                              GestureDetector(
+                                onTap: () {
+                                  // 播放专辑第一首歌曲
+                                  if (albumSongs.isNotEmpty) {
+                                    final audioPlayer = Provider.of<AudioPlayerService>(context, listen: false);
+                                    audioPlayer.setPlaylist(albumSongs);
+                                    audioPlayer.playMusic(albumSongs.first);
+                                  }
+                                },
+                                child: Container(
+                                  width: 40,
+                                  height: 40,
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    shape: BoxShape.circle,
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withOpacity(0.2),
+                                        blurRadius: 4,
+                                        offset: const Offset(0, 2),
+                                      ),
+                                    ],
+                                  ),
+                                  child: Icon(
+                                    Icons.play_arrow,
+                                    color: Theme.of(context).colorScheme.primary,
+                                    size: 24,
+                                  ),
                                 ),
                               ),
+                          ],
+                        ),
                       ),
-                    ),
+                      // 专辑名称
+                      Text(
+                        album,
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w500,
+                            ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      // 艺术家名称
+                      Text(
+                        albumArtist,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+                              height: 1.1,
+                            ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      // 歌曲数量
+                      Text(
+                        '${albumSongs.length}首歌曲',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+                              height: 1.1,
+                            ),
+                      ),
+                    ],
                   ),
-                  // 专辑名称
-                  Text(
-                    album,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w500,
-                        ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  // 艺术家名称
-                  Text(
-                    albumArtist,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
-                          height: 1.1,
-                        ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  // 歌曲数量
-                  Text(
-                    '${albumSongs.length}首歌曲',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
-                          height: 1.1,
-                        ),
-                  ),
-                ],
-              ),
+                );
+              },
             );
           },
         );
@@ -1321,26 +1440,32 @@ class _ContentAreaState extends State<ContentArea> {
   }
 
   void _showArtistDetailPage(BuildContext context, String artist, List<MusicFile> artistSongs) {
-    // 使用Navigator打开歌手详情页面
+    // 使用CustomPageTransition打开歌手详情页面
     Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => ArtistDetailPage(
+      CustomPageTransition(
+        page: ArtistDetailPage(
           artist: artist, 
           songs: artistSongs,
         ),
+        type: PageTransitionType.scaleFade,
+        duration: const Duration(milliseconds: 350),
+        curve: Curves.easeOutQuart,
       ),
     );
   }
 
   void _showAlbumDetailPage(BuildContext context, String album, String albumArtist, List<MusicFile> albumSongs) {
-    // 使用Navigator打开专辑详情页面
+    // 使用CustomPageTransition打开专辑详情页面
     Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => AlbumDetailPage(
+      CustomPageTransition(
+        page: AlbumDetailPage(
           album: album,
           artist: albumArtist,
           songs: albumSongs,
         ),
+        type: PageTransitionType.scaleFade,
+        duration: const Duration(milliseconds: 350),
+        curve: Curves.easeOutQuart,
       ),
     );
   }

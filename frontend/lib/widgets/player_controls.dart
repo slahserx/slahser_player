@@ -169,57 +169,60 @@ class PlayerControls extends StatelessWidget {
                             child: Row(
                               children: [
                                 // 封面 - 可点击进入歌词页面
-                                GestureDetector(
-                                  onTap: () {
-                                    if (currentMusic != null) {
-                                      _navigateToLyricsPage(context, currentMusic);
-                                    }
-                                  },
-                                  child: Container(
-                                    width: 56,
-                                    height: 56,
-                                    decoration: BoxDecoration(
-                                      color: Theme.of(context).colorScheme.surfaceVariant,
-                                      borderRadius: BorderRadius.circular(4),
+                                MouseRegion(
+                                  cursor: SystemMouseCursors.click,
+                                  child: GestureDetector(
+                                    onTap: () {
+                                      if (currentMusic != null) {
+                                        _navigateToLyricsPage(context, currentMusic);
+                                      }
+                                    },
+                                    child: Container(
+                                      width: 56,
+                                      height: 56,
+                                      decoration: BoxDecoration(
+                                        color: Theme.of(context).colorScheme.surfaceVariant,
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: currentMusic?.coverPath != null
+                                          ? ClipRRect(
+                                              borderRadius: BorderRadius.circular(4),
+                                              child: Hero(
+                                                tag: 'cover-${currentMusic!.id}',
+                                                child: Image.file(
+                                                  File(currentMusic!.coverPath!),
+                                                  fit: BoxFit.cover,
+                                                  cacheWidth: 200,
+                                                  cacheHeight: 200,
+                                                  gaplessPlayback: true,
+                                                ),
+                                              ),
+                                            )
+                                          : currentMusic?.hasEmbeddedCover == true && currentMusic?.embeddedCoverBytes != null
+                                              ? ClipRRect(
+                                                  borderRadius: BorderRadius.circular(4),
+                                                  child: Hero(
+                                                    tag: 'embedded-cover-${currentMusic?.id ?? "unknown"}',
+                                                    child: currentMusic != null
+                                                        ? Image.memory(
+                                                            Uint8List.fromList(currentMusic.getCoverBytes()!),
+                                                            fit: BoxFit.cover,
+                                                            cacheWidth: 200,
+                                                            cacheHeight: 200,
+                                                            gaplessPlayback: true,
+                                                          )
+                                                        : const SizedBox.shrink(),
+                                                  ),
+                                                )
+                                              : Hero(
+                                                  tag: 'no-cover-${currentMusic?.id ?? "none"}',
+                                                  child: Icon(
+                                                    Icons.music_note,
+                                                    size: 24,
+                                                    color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                                                  ),
+                                                ),
                                     ),
-                                    child: currentMusic?.coverPath != null
-                                        ? ClipRRect(
-                                            borderRadius: BorderRadius.circular(4),
-                                            child: Hero(
-                                              tag: 'cover-${currentMusic!.id}',
-                                              child: Image.file(
-                                                File(currentMusic!.coverPath!),
-                                                fit: BoxFit.cover,
-                                                cacheWidth: 200,
-                                                cacheHeight: 200,
-                                                gaplessPlayback: true,
-                                              ),
-                                            ),
-                                          )
-                                        : currentMusic?.hasEmbeddedCover == true && currentMusic?.embeddedCoverBytes != null
-                                            ? ClipRRect(
-                                                borderRadius: BorderRadius.circular(4),
-                                                child: Hero(
-                                                  tag: 'embedded-cover-${currentMusic?.id ?? "unknown"}',
-                                                  child: currentMusic != null
-                                                      ? Image.memory(
-                                                          Uint8List.fromList(currentMusic.getCoverBytes()!),
-                                                          fit: BoxFit.cover,
-                                                          cacheWidth: 200,
-                                                          cacheHeight: 200,
-                                                          gaplessPlayback: true,
-                                                        )
-                                                      : const SizedBox.shrink(),
-                                                ),
-                                              )
-                                            : Hero(
-                                                tag: 'no-cover-${currentMusic?.id ?? "none"}',
-                                                child: Icon(
-                                                  Icons.music_note,
-                                                  size: 24,
-                                                  color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
-                                                ),
-                                              ),
                                   ),
                                 ),
                                 const SizedBox(width: 12),
