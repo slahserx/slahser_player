@@ -2,36 +2,19 @@
 
 一款本地音乐播放器，使用 Flutter + Rust 开发。
 
-## 项目架构
 
-### 技术栈
+## 安装
+- [安装版 (.exe)](https://github.com/slahserx/slahser_player/releases/download/v0.8.0/slahser_player_setup_0.8.0.exe) - 推荐大多数用户使用
+- [便携版 (.zip)](https://github.com/slahserx/slahser_player/releases/download/v0.8.0/slahser_player_0.8.0_portable.zip) - 无需安装，解压即用
+
+
+## 技术栈
 - 前端：Flutter (Windows Desktop)
 - 后端：Rust
 - 通信：flutter_rust_bridge + Protobuf
 - 音频处理：Symphonia + CPAL
 - 数据库：SQLite
 
-### 目录结构
-```
-slahser_player/
-├── frontend/           # Flutter 前端项目
-│   ├── lib/
-│   │   ├── main.dart
-│   │   ├── pages/     # 页面组件
-│   │   ├── widgets/   # 可复用组件
-│   │   ├── models/    # 数据模型
-│   │   └── services/  # 服务层
-│   └── pubspec.yaml
-├── backend/           # Rust 后端项目
-│   ├── src/
-│   │   ├── main.rs
-│   │   ├── audio/     # 音频处理模块
-│   │   ├── metadata/  # 元数据解析
-│   │   └── db/        # 数据库操作
-│   └── Cargo.toml
-└── shared/           # 共享代码
-    └── protos/       # Protobuf 定义
-```
 
 ## 功能特性
 
