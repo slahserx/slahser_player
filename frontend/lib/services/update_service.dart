@@ -51,6 +51,17 @@ class UpdateService extends ChangeNotifier {
   // 历史版本列表，包含当前版本
   final List<AppVersion> _versionHistory = [
     AppVersion(
+      version: '0.8.4',
+      buildNumber: '51',
+      releaseDate: DateTime(2025, 3, 16),
+      changelog: [
+        '优化解析功能',
+        '修复歌单功能',
+        '添加更多的过渡动画',
+        '修复一些小bug',
+      ],
+    ),
+    AppVersion(
       version: '0.8.0',
       buildNumber: '47',
       releaseDate: DateTime(2025, 3, 16),
@@ -58,46 +69,8 @@ class UpdateService extends ChangeNotifier {
         '新增播放列表功能，支持创建、删除和编辑播放列表',
         '优化音量控制，修复切换歌曲时音量滑块动画问题',
         '改进用户界面，优化布局和响应式设计',
-        '新增迷你播放器模式，可在任务栏显示播放控制',
         '添加更多音频格式支持，包括FLAC和OGG',
         '修复多个已知BUG和稳定性问题',
-      ],
-    ),
-    AppVersion(
-      version: '0.7.5',
-      buildNumber: '42',
-      releaseDate: DateTime(2025, 2, 10),
-      changelog: [
-        '新增歌词显示功能，支持LRC格式',
-        '添加均衡器功能，支持自定义音频效果',
-        '优化元数据解析，支持显示封面图片',
-        '修复部分安卓设备上的兼容性问题',
-        '提升应用启动速度和整体性能',
-      ],
-    ),
-    AppVersion(
-      version: '0.7.0',
-      buildNumber: '38',
-      releaseDate: DateTime(2025, 1, 5),
-      changelog: [
-        '重新设计用户界面，提供深色和浅色主题',
-        '新增文件夹视图，方便按文件夹浏览音乐',
-        '增加拖放功能，支持直接拖放文件到播放器',
-        '添加全局快捷键支持',
-        '提高音频播放稳定性',
-        '修复内存泄漏问题',
-      ],
-    ),
-    AppVersion(
-      version: '0.6.5',
-      buildNumber: '32',
-      releaseDate: DateTime(2024, 12, 1),
-      changelog: [
-        '添加音乐库管理功能',
-        '新增专辑和艺术家视图',
-        '支持导入/导出M3U播放列表',
-        '改进音频流处理机制',
-        '修复Windows上的高DPI显示问题',
       ],
     ),
   ];
@@ -111,8 +84,10 @@ class UpdateService extends ChangeNotifier {
   
   // 构造函数
   UpdateService() : _selectedVersion = AppVersion.current {
-    // 更新当前版本（与AppVersion.current保持一致）
-    _versionHistory[0] = AppVersion.current;
+    // 确保当前版本信息与AppVersion.current一致
+    if (_versionHistory.isNotEmpty) {
+      _versionHistory[0] = AppVersion.current;
+    }
   }
   
   // 设置选中的版本

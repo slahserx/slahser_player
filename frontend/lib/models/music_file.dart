@@ -25,6 +25,9 @@ class MusicFile {
   final DateTime? lastModified;
   final int? fileSize;
   bool hasEmbeddedCover;
+  bool isFavorite;
+  int playCount;
+  DateTime? lastPlayed;
   
   MusicFile({
     required this.id,
@@ -44,6 +47,9 @@ class MusicFile {
     this.lastModified,
     this.fileSize,
     this.hasEmbeddedCover = false,
+    this.isFavorite = false,
+    this.playCount = 0,
+    this.lastPlayed,
   });
   
   // 从文件路径创建MusicFile对象
@@ -102,184 +108,82 @@ class MusicFile {
       debugPrint('读取元数据失败：$e');
     }
     
-    // 先从文件名提取基本信息（作为备用）
-    Map<String, String> fileNameInfo = _extractInfoFromFileName(title);
-    String fileNameArtist = fileNameInfo['artist'] ?? artist;
-    String fileNameTitle = fileNameInfo['title'] ?? title;
+    // 从文件名提取信息（针对没有完整ID3标签的情况）
+    String fileNameWithoutExt = path.basenameWithoutExtension(fileName);
+    Map<String, String> fileNameInfo = _extractInfoFromFileName(fileNameWithoutExt);
     
-    // 使用直接文件名解析结果作为初始值
-    title = fileNameTitle;
-    artist = fileNameArtist;
-    
-    debugPrint('尝试读取文件元数据: $filePath');
-    
-    // 尝试多种方式读取元数据
-    bool metadataReadSuccess = false;
-    
-    // 方法1: 使用直接ID3标签读取（针对MP3）
-    if (fileExtension.toLowerCase() == 'mp3') {
-      try {
-        debugPrint('尝试直接读取MP3 ID3标签...');
-        Map<String, dynamic> id3Tags = await _readID3TagsFromMP3File(filePath);
-        
-        if (id3Tags.isNotEmpty) {
-          metadataReadSuccess = true;
-          
-          if (id3Tags.containsKey('title') && id3Tags['title'].isNotEmpty) {
-            title = id3Tags['title'];
-            debugPrint('直接从ID3读取标题: $title');
-          }
-          
-          if (id3Tags.containsKey('artist') && id3Tags['artist'].isNotEmpty) {
-            artist = id3Tags['artist'];
-            debugPrint('直接从ID3读取艺术家: $artist');
-          }
-          
-          if (id3Tags.containsKey('album') && id3Tags['album'].isNotEmpty) {
-            album = id3Tags['album'];
-            debugPrint('直接从ID3读取专辑: $album');
-          }
-          
-          if (id3Tags.containsKey('duration') && id3Tags['duration'] is Duration) {
-            duration = id3Tags['duration'];
-            debugPrint('直接从ID3读取时长: ${duration.inSeconds}秒');
-          }
-          
-          if (id3Tags.containsKey('coverBytes') && id3Tags['coverBytes'] != null) {
-            embeddedCoverBytes = id3Tags['coverBytes'] as List<int>?;
-            if (embeddedCoverBytes != null && embeddedCoverBytes!.isNotEmpty) {
-              hasEmbeddedCover = true;
-              debugPrint('从ID3标签获取到内嵌封面');
-            }
-          }
-        }
-      } catch (e) {
-        debugPrint('直接ID3标签读取失败: $e');
-      }
+    // 初始信息不完整时，尝试从文件名推断
+    if (title == fileNameWithoutExt || title.isEmpty) {
+      title = fileNameInfo['title'] ?? fileNameWithoutExt;
+      debugPrint('从文件名提取标题: $title');
     }
     
-    // 方法2: 使用flutter_media_metadata库读取元数据
-    if (!metadataReadSuccess) {
-      try {
-        debugPrint('尝试使用flutter_media_metadata读取...');
-      final metadata = await MetadataRetriever.fromFile(file);
-      
-        // 提取元数据 - 标题
-      if (metadata.trackName != null && metadata.trackName!.isNotEmpty) {
-        title = metadata.trackName!;
-          metadataReadSuccess = true;
-          debugPrint('成功从元数据读取标题: $title');
-      }
-      
-        // 提取元数据 - 专辑
-      if (metadata.albumName != null && metadata.albumName!.isNotEmpty) {
-        album = metadata.albumName!;
-          metadataReadSuccess = true;
-          debugPrint('成功从元数据读取专辑: $album');
-      }
-      
-        // 提取元数据 - 艺术家
-      if (metadata.trackArtistNames != null && metadata.trackArtistNames!.isNotEmpty) {
-        artist = metadata.trackArtistNames!.join(', ');
-          metadataReadSuccess = true;
-          debugPrint('成功从元数据读取艺术家: $artist');
-      } else if (metadata.albumArtistName != null && metadata.albumArtistName!.isNotEmpty) {
-        artist = metadata.albumArtistName!;
-          metadataReadSuccess = true;
-          debugPrint('成功从元数据读取专辑艺术家: $artist');
-      }
-      
-        // 提取元数据 - 时长
-      if (metadata.trackDuration != null && metadata.trackDuration! > 0) {
-        duration = Duration(milliseconds: metadata.trackDuration!);
-          metadataReadSuccess = true;
-          debugPrint('成功从元数据读取时长: ${duration.inSeconds}秒');
-      }
-      
-      // 提取年份
-      if (metadata.year != null) {
-        year = metadata.year.toString();
-        debugPrint('成功从元数据读取年份: $year');
-      }
-      
-      // 提取流派
-      if (metadata.genre != null && metadata.genre!.isNotEmpty) {
-        genre = metadata.genre;
-        debugPrint('成功从元数据读取流派: $genre');
-      }
-      
-      // 提取内嵌封面
-        if (metadata.albumArt != null && metadata.albumArt!.isNotEmpty) {
-        embeddedCoverBytes = metadata.albumArt;
-          debugPrint('成功读取内嵌封面图片');
-          hasEmbeddedCover = true;
-        }
-      } catch (e) {
-        debugPrint('flutter_media_metadata读取失败: $e');
-      }
-    }
-    
-    // 方法3: 如果前两种方法失败，尝试直接从文件读取
-    if (!metadataReadSuccess) {
-      debugPrint('尝试备用方法读取元数据...');
-      try {
-        // 读取文件头部获取信息
-        final fileSize = await file.length();
-        
-        if (fileExtension.toLowerCase() == 'mp3') {
-          // 使用文件大小计算大致时长（假设128kbps的比特率）
-          final bitRate = 128 * 1024; // 默认128kbps
-          final estimatedSeconds = ((fileSize * 8) / bitRate).floor();
-          duration = Duration(seconds: estimatedSeconds > 0 ? estimatedSeconds : 180);
-          debugPrint('使用文件大小估算时长: ${duration.inSeconds}秒 (文件大小: ${fileSize}字节)');
-        }
-    } catch (e) {
-        debugPrint('备用方法读取元数据失败: $e');
-      }
+    if (artist == '未知艺术家' || artist.isEmpty) {
+      artist = fileNameInfo['artist'] ?? '未知艺术家';
+      debugPrint('从文件名提取艺术家: $artist');
     }
     
     debugPrint('最终元数据: 标题="$title", 艺术家="$artist", 专辑="$album", 时长=${duration.inSeconds}秒');
     
     // 查找歌词文件
-    final lyricsPath = await findLyricsFileAsync(filePath);
-    if (lyricsPath != null) {
-      debugPrint('找到歌词文件: $lyricsPath');
+    try {
+      final lyricsPath = '${filePath.substring(0, filePath.lastIndexOf('.'))}';
+      List<String> lyricsExtensions = ['.lrc', '.LRC'];
+      for (final ext in lyricsExtensions) {
+        final lrcFilePath = '$lyricsPath$ext';
+        if (await File(lrcFilePath).exists()) {
+          debugPrint('找到歌词文件: $lrcFilePath');
+          break;
+        }
+      }
+    } catch (e) {
+      debugPrint('查找歌词文件失败: $e');
     }
     
-    // 查找封面图片
-    final coverPath = await findCoverImageAsync(filePath);
-    if (coverPath != null) {
-      debugPrint('找到封面图片: $coverPath');
+    // 查找专辑封面图像
+    String? coverPath;
+    try {
+      coverPath = await _findCoverImage(filePath);
+    } catch (e) {
+      debugPrint('查找封面图像失败: $e');
     }
     
-    // 如果时长为0，设置一个默认值
+    // 时长如果无效，使用默认值
     if (duration.inSeconds <= 0) {
-      duration = const Duration(seconds: 180); // 3分钟
-      debugPrint('时长无效，设置默认时长: 180秒');
+      duration = const Duration(seconds: 180); // 默认3分钟
+      debugPrint('时长无效，设置默认时长: ${duration.inSeconds}秒');
     }
     
-    // 使用文件路径生成唯一ID，确保每次启动时相同文件的ID一致
-    String id = generateStableId(filePath);
-    debugPrint('为文件生成稳定ID: $id');
+    // 检查嵌入式封面
+    if (embeddedCoverBytes != null && embeddedCoverBytes!.isNotEmpty) {
+      hasEmbeddedCover = true;
+      debugPrint('成功读取内嵌封面图片');
+    }
+    
+    // 生成稳定ID（基于文件路径）
+    final fileId = _generateStableId(filePath);
+    debugPrint('为文件生成稳定ID: $fileId');
     
     return MusicFile(
-      id: id,
-      filePath: filePath,
+      id: fileId,
+      filePath: filePath.replaceAll('\\', '/'),
       fileName: fileName,
       fileExtension: fileExtension,
+      fileSize: fileSize ?? 0,
       title: title.isNotEmpty ? title : path.basenameWithoutExtension(fileName),
-      artist: artist.isNotEmpty ? artist : '未知艺术家',
-      album: album.isNotEmpty ? album : '未知专辑',
-      lyricsPath: lyricsPath,
-      coverPath: coverPath,
+      artist: artist,
+      album: album,
       duration: duration,
+      coverPath: coverPath,
       embeddedCoverBytes: embeddedCoverBytes,
+      hasEmbeddedCover: hasEmbeddedCover,
       trackNumber: trackNumber,
       year: year,
       genre: genre,
-      lastModified: lastModified,
-      fileSize: fileSize,
-      hasEmbeddedCover: hasEmbeddedCover,
+      lastModified: lastModified ?? DateTime.now(),
+      isFavorite: false,
+      playCount: 0,
+      lastPlayed: null,
     );
   }
   
@@ -895,20 +799,48 @@ class MusicFile {
       if (fileName.contains(separator)) {
         final parts = fileName.split(separator);
         if (parts.length >= 2) {
-          String artistPart = parts[0].trim();
-          // 合并剩余部分作为标题
-          String titlePart = parts.sublist(1).join(' ').trim();
+          String firstPart = parts[0].trim();
+          // 合并剩余部分作为第二部分
+          String secondPart = parts.sublist(1).join(' ').trim();
           
           // 处理特殊情况
-          titlePart = _cleanupTitle(titlePart);
-          artistPart = _cleanupArtist(artistPart);
+          firstPart = _cleanupText(firstPart);
+          secondPart = _cleanupText(secondPart);
           
-          if (artistPart.isNotEmpty) {
-            result['artist'] = artistPart;
+          // 判断顺序：是"艺术家-标题"还是"标题-艺术家"
+          // 有些特定的艺术家，比如"周杰伦"，如果出现在第二部分，很可能是"标题-艺术家"格式
+          final commonArtists = ['周杰伦', '陈奕迅', '林俊杰', '张学友', '刘德华', '王力宏', '薛之谦'];
+          bool isReversed = false;
+          
+          // 如果第二部分是常见艺术家名，可能是颠倒的格式
+          if (commonArtists.any((artist) => secondPart.contains(artist))) {
+            isReversed = true;
           }
           
-          if (titlePart.isNotEmpty) {
-            result['title'] = titlePart;
+          // 如果文件名以中文数字或者英文数字开头（如"01 - 歌名"），则更可能是"曲号-歌名"格式
+          final startsWithNumber = RegExp(r'^(\d+|[一二三四五六七八九十百]+)\s*[\.、\-_]').hasMatch(firstPart);
+          if (startsWithNumber) {
+            isReversed = false; // 曲号在前，不颠倒
+            // 从第一部分删除序号
+            firstPart = firstPart.replaceFirst(RegExp(r'^(\d+|[一二三四五六七八九十百]+)\s*[\.、\-_]\s*'), '');
+          }
+                    
+          if (isReversed) {
+            // 颠倒顺序：第二部分是艺术家，第一部分是标题
+            if (secondPart.isNotEmpty) {
+              result['artist'] = secondPart;
+            }
+            if (firstPart.isNotEmpty) {
+              result['title'] = firstPart;
+            }
+          } else {
+            // 常规顺序：第一部分是艺术家，第二部分是标题
+            if (firstPart.isNotEmpty) {
+              result['artist'] = firstPart;
+            }
+            if (secondPart.isNotEmpty) {
+              result['title'] = secondPart;
+            }
           }
           
           break;
@@ -919,8 +851,8 @@ class MusicFile {
     return result;
   }
   
-  // 清理标题中的常见后缀
-  static String _cleanupTitle(String title) {
+  // 清理文本（用于标题和艺术家）
+  static String _cleanupText(String text) {
     // 移除常见的文件后缀和质量标记
     final suffixesToRemove = [
       '.mp3', '.flac', '.wav', '.ogg', '.m4a',
@@ -930,32 +862,10 @@ class MusicFile {
       '（Cover）', '(Cover)', '[Cover]',
     ];
     
-    String result = title;
+    String result = text;
     for (final suffix in suffixesToRemove) {
       if (result.endsWith(suffix)) {
         result = result.substring(0, result.length - suffix.length).trim();
-      }
-      if (result.contains(suffix)) {
-        result = result.replaceAll(suffix, '').trim();
-      }
-    }
-    
-    return result;
-  }
-  
-  // 清理艺术家名称
-  static String _cleanupArtist(String artist) {
-    // 移除一些常见的前缀
-    final prefixesToRemove = [
-      '歌手：', '歌手:', 'Singer:', 'Singer：',
-      '演唱：', '演唱:', '演唱者：', '演唱者:',
-      '演唱 ', '演唱',
-    ];
-    
-    String result = artist;
-    for (final prefix in prefixesToRemove) {
-      if (result.startsWith(prefix)) {
-        result = result.substring(prefix.length).trim();
       }
     }
     
@@ -1055,8 +965,8 @@ class MusicFile {
     return null;
   }
   
-  // 为了兼容性保留同步版本
-  static String? findCoverImage(String audioFilePath) {
+  // 创建私有的封面图片查找方法
+  static String? _findCoverImage(String audioFilePath) {
     final directory = path.dirname(audioFilePath);
     final baseName = path.basenameWithoutExtension(audioFilePath);
     
@@ -1077,17 +987,44 @@ class MusicFile {
     ];
     
     try {
-    for (final name in possibleNames) {
-      final coverPath = path.join(directory, name);
-      if (File(coverPath).existsSync()) {
-        return coverPath;
+      for (final name in possibleNames) {
+        final coverPath = path.join(directory, name);
+        if (File(coverPath).existsSync()) {
+          return coverPath;
+        }
       }
+      
+      // 查找目录中任何图像文件
+      final dir = Directory(directory);
+      final files = dir.listSync();
+      for (final entity in files) {
+        if (entity is File) {
+          final ext = path.extension(entity.path).toLowerCase();
+          if (['.jpg', '.jpeg', '.png'].contains(ext)) {
+            return entity.path;
+          }
+        }
       }
     } catch (e) {
       debugPrint('查找封面图片失败: $e');
     }
     
     return null;
+  }
+  
+  // 私有的生成稳定ID方法
+  static String _generateStableId(String filePath) {
+    // 规范化路径，防止不同格式导致不同的ID
+    String normalizedPath = filePath.replaceAll('\\', '/').toLowerCase();
+    
+    // 计算文件路径的哈希值
+    int hashCode = normalizedPath.hashCode;
+    
+    // 转换为32位十六进制字符串
+    String hexString = hashCode.toUnsigned(32).toRadixString(16).padLeft(8, '0');
+    
+    // 格式化为类似UUID的格式
+    return 'music-$hexString';
   }
   
   // 获取封面图片路径
@@ -1122,6 +1059,9 @@ class MusicFile {
       lastModified: json['lastModified'] != null ? DateTime.fromMillisecondsSinceEpoch(json['lastModified']) : null,
       fileSize: json['fileSize'],
       hasEmbeddedCover: json['hasEmbeddedCover'] ?? false,
+      isFavorite: json['isFavorite'] ?? false,
+      playCount: json['playCount'] ?? 0,
+      lastPlayed: json['lastPlayed'] != null ? DateTime.fromMillisecondsSinceEpoch(json['lastPlayed']) : null,
     );
   }
   
@@ -1145,7 +1085,9 @@ class MusicFile {
         'lastModified': lastModified?.millisecondsSinceEpoch,
         'fileSize': fileSize,
         'hasEmbeddedCover': hasEmbeddedCover,
-        // 不保存embeddedCoverBytes，因为太大可能导致序列化问题
+        'isFavorite': isFavorite,
+        'playCount': playCount,
+        'lastPlayed': lastPlayed?.millisecondsSinceEpoch,
       };
     } catch (e) {
       debugPrint('序列化音乐文件失败: $e');
@@ -1160,6 +1102,9 @@ class MusicFile {
         'album': album,
         'durationInSeconds': duration.inSeconds,
         'hasEmbeddedCover': hasEmbeddedCover,
+        'isFavorite': isFavorite,
+        'playCount': playCount,
+        'lastPlayed': lastPlayed?.millisecondsSinceEpoch,
       };
     }
   }
@@ -1189,6 +1134,9 @@ class MusicFile {
       fileSize: fileSize,
       hasEmbeddedCover: hasEmbeddedCover,
       embeddedCoverBytes: embeddedCoverBytes != null ? List<int>.from(embeddedCoverBytes!) : null,
+      isFavorite: isFavorite,
+      playCount: playCount,
+      lastPlayed: lastPlayed,
     );
   }
 } 
