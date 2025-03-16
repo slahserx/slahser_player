@@ -53,6 +53,18 @@ class _PlaylistViewState extends State<PlaylistView> {
               height: 160,
               decoration: BoxDecoration(
                 color: Theme.of(context).colorScheme.surfaceVariant,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: Theme.of(context).colorScheme.outline.withOpacity(0.1),
+                  width: 1,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
                 image: widget.playlist.getCoverImage(playlistService.allMusicFiles) != null
                     ? DecorationImage(
                         image: FileImage(File(widget.playlist.getCoverImage(playlistService.allMusicFiles)!)),
@@ -64,8 +76,8 @@ class _PlaylistViewState extends State<PlaylistView> {
                   ? Center(
                       child: Icon(
                         Icons.music_note,
-                        size: 64,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.6),
+                        size: 80,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.4),
                       ),
                     )
                   : null,
@@ -84,6 +96,17 @@ class _PlaylistViewState extends State<PlaylistView> {
                   ),
                 ),
                 const SizedBox(height: 8),
+                if (widget.playlist.description.isNotEmpty) ...[
+                  Text(
+                    widget.playlist.description,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 8),
+                ],
                 Text(
                   '包含 ${songs.length} 首歌曲',
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
@@ -114,6 +137,19 @@ class _PlaylistViewState extends State<PlaylistView> {
                         foregroundColor: Theme.of(context).colorScheme.onSecondaryContainer,
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                       ),
+                    ),
+                    const Spacer(),
+                    // 编辑和删除按钮
+                    IconButton(
+                      icon: const Icon(Icons.edit),
+                      tooltip: '编辑歌单',
+                      onPressed: _showEditPlaylistDialog,
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.delete),
+                      tooltip: '删除歌单',
+                      onPressed: _showDeletePlaylistDialog,
+                      color: Theme.of(context).colorScheme.error,
                     ),
                   ],
                 ),
@@ -169,6 +205,10 @@ class _PlaylistViewState extends State<PlaylistView> {
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(4),
               color: Theme.of(context).colorScheme.surfaceVariant,
+              border: Border.all(
+                color: Theme.of(context).colorScheme.outline.withOpacity(0.1),
+                width: 1,
+              ),
             ),
             clipBehavior: Clip.antiAlias,
             child: _buildCoverImage(music),
@@ -298,25 +338,16 @@ class _PlaylistViewState extends State<PlaylistView> {
   void _removeFromPlaylist(MusicFile music) {
     final playlistService = Provider.of<PlaylistService>(context, listen: false);
     
-    if (widget.playlist.isDefault) {
-      // 从我喜欢的音乐中移除
-      playlistService.removeFromFavorites(music);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('已从我喜欢的音乐中移除')),
-      );
-    } else {
-      // 从普通歌单中移除
-      playlistService.removeSongFromPlaylist(widget.playlist.id, music);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已从歌单"${widget.playlist.name}"中移除')),
-      );
-    }
+    // 从歌单中移除
+    playlistService.removeSongFromPlaylist(widget.playlist.id, music);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('已从歌单"${widget.playlist.name}"中移除')),
+    );
   }
 
   // 显示歌曲操作选项
   void _showSongOptions(MusicFile music) {
     final audioPlayer = Provider.of<AudioPlayerService>(context, listen: false);
-    final playlistService = Provider.of<PlaylistService>(context, listen: false);
     
     showModalBottomSheet(
       context: context,
@@ -333,44 +364,22 @@ class _PlaylistViewState extends State<PlaylistView> {
                   audioPlayer.playMusic(music);
                 },
               ),
-              if (!widget.playlist.isDefault)
-                ListTile(
-                  leading: const Icon(Icons.playlist_add),
-                  title: const Text('添加到其他歌单'),
-                  onTap: () {
-                    Navigator.pop(context);
-                    _showAddToPlaylistDialog(music);
-                  },
-                ),
               ListTile(
-                leading: Icon(
-                  playlistService.isSongInFavorites(music) 
-                      ? Icons.favorite 
-                      : Icons.favorite_border,
-                ),
-                title: Text(
-                  playlistService.isSongInFavorites(music) 
-                      ? '取消收藏' 
-                      : '收藏到我喜欢的音乐',
-                ),
+                leading: const Icon(Icons.playlist_add),
+                title: const Text('添加到其他歌单'),
                 onTap: () {
                   Navigator.pop(context);
-                  if (playlistService.isSongInFavorites(music)) {
-                    playlistService.removeFromFavorites(music);
-                  } else {
-                    playlistService.addToFavorites(music);
-                  }
+                  _showAddToPlaylistDialog(music);
                 },
               ),
-              if (!widget.playlist.isDefault)
-                ListTile(
-                  leading: const Icon(Icons.remove_circle),
-                  title: const Text('从歌单中移除'),
-                  onTap: () {
-                    Navigator.pop(context);
-                    _removeFromPlaylist(music);
-                  },
-                ),
+              ListTile(
+                leading: const Icon(Icons.remove_circle),
+                title: const Text('从歌单中移除'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _removeFromPlaylist(music);
+                },
+              ),
             ],
           ),
         );
@@ -491,7 +500,8 @@ class _PlaylistViewState extends State<PlaylistView> {
 
   // 显示编辑歌单对话框
   void _showEditPlaylistDialog() {
-    final TextEditingController controller = TextEditingController(text: widget.playlist.name);
+    final nameController = TextEditingController(text: widget.playlist.name);
+    final descriptionController = TextEditingController(text: widget.playlist.description);
     final playlistService = Provider.of<PlaylistService>(context, listen: false);
     
     showDialog(
@@ -499,12 +509,29 @@ class _PlaylistViewState extends State<PlaylistView> {
       builder: (context) {
         return AlertDialog(
           title: const Text('编辑歌单'),
-          content: TextField(
-            controller: controller,
-            autofocus: true,
-            decoration: const InputDecoration(
-              labelText: '歌单名称',
-              hintText: '请输入歌单名称',
+          content: SizedBox(
+            width: 400,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameController,
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    labelText: '歌单名称',
+                    hintText: '请输入歌单名称',
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: descriptionController,
+                  decoration: const InputDecoration(
+                    labelText: '歌单描述',
+                    hintText: '请输入歌单描述（可选）',
+                  ),
+                  maxLines: 3,
+                ),
+              ],
             ),
           ),
           actions: [
@@ -516,15 +543,30 @@ class _PlaylistViewState extends State<PlaylistView> {
             ),
             ElevatedButton(
               onPressed: () {
-                final name = controller.text.trim();
-                if (name.isNotEmpty && name != widget.playlist.name) {
-                  playlistService.renamePlaylist(widget.playlist.id, name);
-                  Navigator.pop(context);
-                  setState(() {});
-                } else if (name.isEmpty) {
+                final name = nameController.text.trim();
+                final description = descriptionController.text.trim();
+                
+                if (name.isEmpty) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('歌单名称不能为空')),
                   );
+                  return;
+                }
+                
+                // 检查是否有变化
+                final nameChanged = name != widget.playlist.name;
+                final descriptionChanged = description != widget.playlist.description;
+                
+                if (nameChanged || descriptionChanged) {
+                  // 使用updatePlaylist方法更新歌单信息
+                  playlistService.updatePlaylist(
+                    widget.playlist.id, 
+                    newName: nameChanged ? name : null,
+                    newDescription: descriptionChanged ? description : null
+                  );
+                  
+                  Navigator.pop(context);
+                  setState(() {});
                 } else {
                   Navigator.pop(context);
                 }
@@ -570,4 +612,4 @@ class _PlaylistViewState extends State<PlaylistView> {
       },
     );
   }
-} 
+}

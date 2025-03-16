@@ -45,23 +45,6 @@ class PlaylistService extends ChangeNotifier {
   /// 获取音乐库中的所有音乐文件
   List<MusicFile> get allMusicFiles => _musicLibraryService.musicFiles;
   
-  /// 获取收藏夹播放列表
-  Playlist getFavoritesPlaylist() {
-    // 查找默认的收藏夹播放列表
-    final favorites = _playlists.firstWhere(
-      (playlist) => playlist.isDefault,
-      orElse: () {
-        // 如果没有找到，创建一个新的收藏夹
-        final newFavorites = _createDefaultFavoritesPlaylist();
-        _playlists.add(newFavorites);
-        _savePlaylists(); // 保存更改
-        return newFavorites;
-      },
-    );
-    
-    return favorites;
-  }
-  
   /// 获取指定ID的歌单
   Playlist? getPlaylist(String id) {
     try {
@@ -77,15 +60,6 @@ class PlaylistService extends ChangeNotifier {
     
     // 加载歌单
     await _loadPlaylists();
-    
-    // 如果没有任何歌单，创建默认歌单
-    if (_playlists.isEmpty) {
-      debugPrint('**** 没有找到歌单，创建默认歌单 ****');
-      _createDefaultPlaylist();
-      await _savePlaylists();
-    } else {
-      debugPrint('**** 成功读取${_playlists.length}个歌单，不需要创建默认歌单 ****');
-    }
     
     // 清理不存在的歌曲路径
     _cleanupNonExistingPaths();
@@ -109,32 +83,6 @@ class PlaylistService extends ChangeNotifier {
       _savePlaylists();
       notifyListeners();
     }
-  }
-  
-  /// 创建默认的"我喜欢的音乐"歌单
-  Playlist _createDefaultFavoritesPlaylist() {
-    return Playlist(
-      id: const Uuid().v4(),
-      name: '我喜欢的音乐',
-      songPaths: [],
-      createdAt: DateTime.now(),
-      updatedAt: DateTime.now(),
-      isDefault: true,
-    );
-  }
-  
-  /// 创建默认的"我喜欢的音乐"歌单
-  void _createDefaultPlaylist() {
-    final defaultPlaylist = Playlist(
-      id: const Uuid().v4(),
-      name: '我喜欢的音乐',
-      isDefault: true,
-      songPaths: [],
-      createdAt: DateTime.now(),
-      updatedAt: DateTime.now(),
-    );
-    
-    _playlists.add(defaultPlaylist);
   }
   
   /// 加载歌单
@@ -166,18 +114,15 @@ class PlaylistService extends ChangeNotifier {
         } else {
           debugPrint('**** 歌单文件内容为空 ****');
           _playlists.clear();
-          _createDefaultPlaylist();
         }
       } else {
-        debugPrint('**** 歌单文件不存在，将创建默认歌单 ****');
+        debugPrint('**** 歌单文件不存在 ****');
         _playlists.clear();
-        _createDefaultPlaylist();
       }
     } catch (e) {
-      // 如果加载失败，创建默认歌单
+      // 如果加载失败，创建空歌单列表
       debugPrint('**** 加载歌单失败: $e ****');
       _playlists.clear();
-      _createDefaultPlaylist();
     }
   }
   
@@ -199,12 +144,17 @@ class PlaylistService extends ChangeNotifier {
     }
   }
   
+  /// 公开的保存歌单方法
+  Future<void> savePlaylists() async {
+    await _savePlaylists();
+  }
+  
   /// 创建新歌单
-  Future<Playlist> createPlaylist(String name) async {
+  Future<Playlist> createPlaylist(String name, {String description = ''}) async {
     final playlist = Playlist(
       id: const Uuid().v4(),
       name: name,
-      isDefault: false,
+      description: description,
       songPaths: [],
       createdAt: DateTime.now(),
       updatedAt: DateTime.now(),
@@ -219,30 +169,35 @@ class PlaylistService extends ChangeNotifier {
   
   /// 删除歌单
   Future<void> deletePlaylist(String id) async {
-    // 不能删除默认歌单
-    final playlist = getPlaylist(id);
-    if (playlist == null || playlist.isDefault) {
-      return;
-    }
-    
     _playlists.removeWhere((p) => p.id == id);
     await _savePlaylists();
     notifyListeners();
   }
   
-  /// 重命名歌单
-  Future<void> renamePlaylist(String id, String newName) async {
-    // 不能重命名默认歌单
+  /// 更新歌单信息
+  Future<void> updatePlaylist(String id, {String? newName, String? newDescription}) async {
     final playlist = getPlaylist(id);
-    if (playlist == null || playlist.isDefault) {
+    if (playlist == null) {
       return;
     }
     
-    playlist.name = newName;
+    if (newName != null && newName.isNotEmpty) {
+      playlist.name = newName;
+    }
+    
+    if (newDescription != null) {
+      playlist.description = newDescription;
+    }
+    
     playlist.updatedAt = DateTime.now();
     
     await _savePlaylists();
     notifyListeners();
+  }
+  
+  /// 重命名歌单 (保留向后兼容)
+  Future<void> renamePlaylist(String id, String newName) async {
+    await updatePlaylist(id, newName: newName);
   }
   
   /// 添加歌曲到歌单
@@ -257,6 +212,32 @@ class PlaylistService extends ChangeNotifier {
     if (playlist.songPaths.contains(song.filePath)) {
       debugPrint('**** 歌曲"${song.title}"已在歌单"${playlist.name}"中 ****');
       return;
+    }
+    
+    // 如果是第一首歌曲且歌单没有自定义封面，使用该歌曲的封面
+    if (playlist.songPaths.isEmpty && (playlist.coverPath == null || !File(playlist.coverPath!).existsSync())) {
+      if (song.coverPath != null && File(song.coverPath!).existsSync()) {
+        // 使用外部封面文件
+        playlist.coverPath = song.coverPath;
+        debugPrint('**** 使用歌曲"${song.title}"的外部封面作为歌单"${playlist.name}"的封面 ****');
+      } else if (song.hasEmbeddedCover && song.embeddedCoverBytes != null) {
+        // 尝试保存嵌入的封面图片到临时文件
+        try {
+          final appDirPath = await _getAppDirectoryPath();
+          final coverFileName = 'playlist_cover_${playlist.id}.jpg';
+          final coverFilePath = path.join(appDirPath, coverFileName);
+          
+          // 保存嵌入的封面到文件
+          final coverFile = File(coverFilePath);
+          await coverFile.writeAsBytes(song.embeddedCoverBytes!);
+          
+          // 设置歌单封面路径
+          playlist.coverPath = coverFilePath;
+          debugPrint('**** 已提取歌曲"${song.title}"的嵌入封面并设置为歌单"${playlist.name}"的封面 ****');
+        } catch (e) {
+          debugPrint('**** 提取歌曲封面失败: $e ****');
+        }
+      }
     }
     
     playlist.addSong(song);
@@ -292,24 +273,6 @@ class PlaylistService extends ChangeNotifier {
     notifyListeners();
   }
   
-  /// 添加歌曲到收藏夹
-  Future<void> addToFavorites(MusicFile song) async {
-    final favorites = getFavoritesPlaylist();
-    await addSongToPlaylist(favorites.id, song);
-  }
-  
-  /// 从收藏夹中移除歌曲
-  Future<void> removeFromFavorites(MusicFile song) async {
-    final favorites = getFavoritesPlaylist();
-    await removeSongFromPlaylist(favorites.id, song);
-  }
-  
-  /// 检查歌曲是否在收藏夹中
-  bool isSongInFavorites(MusicFile song) {
-    final favoritesPlaylist = getFavoritesPlaylist();
-    return favoritesPlaylist.songPaths.contains(song.filePath);
-  }
-  
   /// 获取歌单中的所有歌曲
   List<MusicFile> getPlaylistSongs(String playlistId) {
     final playlist = getPlaylist(playlistId);
@@ -319,4 +282,4 @@ class PlaylistService extends ChangeNotifier {
     
     return playlist.getSongs(_musicLibraryService.musicFiles);
   }
-} 
+}

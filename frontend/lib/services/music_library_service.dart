@@ -76,44 +76,55 @@ class MusicLibraryService extends ChangeNotifier {
     _isLoading = true;
     notifyListeners();
     
+    // 创建现有音乐文件路径的映射，用于快速查找
+    final Map<String, bool> existingPaths = {};
+    for (var music in _musicFiles) {
+      // 规范化路径并存储到映射中
+      existingPaths[_normalizePath(music.filePath)] = true;
+    }
+    
     List<MusicFile> newFiles = [];
     int processedCount = 0;
     int totalFiles = filePaths.length;
+    int skippedCount = 0;
     
     for (String filePath in filePaths) {
       // 规范化文件路径
-      String normalizedPath = filePath.replaceAll('\\', '/');
+      String normalizedPath = _normalizePath(filePath);
       
       processedCount++;
       if (processedCount % 5 == 0 || processedCount == totalFiles) {
-        debugPrint('正在处理文件: $processedCount / $totalFiles');
+        debugPrint('正在处理文件: $processedCount / $totalFiles (已跳过: $skippedCount)');
         // 更新UI但保持loading状态
         notifyListeners();
       }
       
-      // 检查文件是否已存在
-      bool exists = _musicFiles.any((file) => file.filePath == normalizedPath);
-      if (!exists) {
-        try {
-          // 验证文件是否存在且可读
-          final file = File(normalizedPath);
-          if (await file.exists()) {
-            debugPrint('开始解析文件: $normalizedPath');
-            MusicFile musicFile = await MusicFile.fromPath(normalizedPath);
-            newFiles.add(musicFile);
-            debugPrint('文件解析完成: ${musicFile.title} - ${musicFile.artist}');
-          } else {
-            debugPrint('文件不存在: $normalizedPath');
-          }
-        } catch (e) {
-          debugPrint('处理音乐文件失败: $normalizedPath, 错误: $e');
-        }
-      } else {
+      // 检查文件是否已存在（使用规范化路径比较）
+      if (existingPaths.containsKey(normalizedPath)) {
         debugPrint('文件已存在，跳过: $normalizedPath');
+        skippedCount++;
+        continue;
+      }
+      
+      try {
+        // 验证文件是否存在且可读
+        final file = File(normalizedPath);
+        if (await file.exists()) {
+          debugPrint('开始解析文件: $normalizedPath');
+          MusicFile musicFile = await MusicFile.fromPath(normalizedPath);
+          newFiles.add(musicFile);
+          // 将新文件添加到映射中，防止同一批导入中的重复文件
+          existingPaths[normalizedPath] = true;
+          debugPrint('文件解析完成: ${musicFile.title} - ${musicFile.artist}');
+        } else {
+          debugPrint('文件不存在: $normalizedPath');
+        }
+      } catch (e) {
+        debugPrint('处理音乐文件失败: $normalizedPath, 错误: $e');
       }
     }
     
-    debugPrint('处理完成，新增 ${newFiles.length} 个文件');
+    debugPrint('处理完成，总计: ${filePaths.length} 个文件，新增: ${newFiles.length} 个，跳过: $skippedCount 个');
     
     if (newFiles.isNotEmpty) {
       _musicFiles.addAll(newFiles);
@@ -124,11 +135,35 @@ class MusicLibraryService extends ChangeNotifier {
     notifyListeners();
   }
   
+  // 规范化路径
+  String _normalizePath(String filePath) {
+    // 转换路径分隔符为统一格式，并转为小写便于比较
+    return filePath.replaceAll('\\', '/').toLowerCase();
+  }
+  
   // 保存音乐库
   Future<void> _saveLibrary() async {
     try {
       final filePath = await _getMusicLibraryFilePath();
       debugPrint('准备保存音乐库到: $filePath');
+      
+      // 检查是否有重复路径，并去重
+      final Set<String> uniquePaths = Set<String>();
+      final List<MusicFile> uniqueFiles = [];
+      
+      for (var file in _musicFiles) {
+        String normalizedPath = _normalizePath(file.filePath);
+        if (!uniquePaths.contains(normalizedPath)) {
+          uniquePaths.add(normalizedPath);
+          uniqueFiles.add(file);
+        }
+      }
+      
+      // 如果检测到重复，更新音乐文件列表
+      if (uniqueFiles.length < _musicFiles.length) {
+        debugPrint('检测到${_musicFiles.length - uniqueFiles.length}个重复音乐文件，已自动清理');
+        _musicFiles = uniqueFiles;
+      }
       
       // 将音乐文件列表转换为简单的路径列表
       List<String> paths = _musicFiles.map((file) => file.filePath).toList();
@@ -144,6 +179,7 @@ class MusicLibraryService extends ChangeNotifier {
   // 加载音乐库
   Future<void> loadLibrary() async {
     _isLoading = true;
+    _isScanning = true;
     notifyListeners();
     
     try {
@@ -158,17 +194,40 @@ class MusicLibraryService extends ChangeNotifier {
           List<dynamic> paths = jsonDecode(jsonString);
           debugPrint('成功解析音乐库JSON，找到${paths.length}个音乐文件路径');
           
-          _musicFiles = [];
+          // 使用Set保存规范化路径，防止重复
+          final Set<String> normalizedPaths = {};
+          final List<MusicFile> loadedFiles = [];
+          int duplicateCount = 0;
+          
           for (String filePath in paths.cast<String>()) {
+            // 规范化路径
+            String normalizedPath = _normalizePath(filePath);
+            
+            // 如果路径已存在，跳过
+            if (normalizedPaths.contains(normalizedPath)) {
+              duplicateCount++;
+              continue;
+            }
+            
+            normalizedPaths.add(normalizedPath);
+            
             // 检查文件是否仍然存在
-            if (File(filePath).existsSync()) {
+            if (File(normalizedPath).existsSync()) {
               try {
-                MusicFile musicFile = await MusicFile.fromPath(filePath);
-                _musicFiles.add(musicFile);
+                MusicFile musicFile = await MusicFile.fromPath(normalizedPath);
+                loadedFiles.add(musicFile);
               } catch (e) {
-                debugPrint('加载音乐文件失败: $filePath, 错误: $e');
+                debugPrint('加载音乐文件失败: $normalizedPath, 错误: $e');
               }
             }
+          }
+          
+          _musicFiles = loadedFiles;
+          
+          if (duplicateCount > 0) {
+            debugPrint('检测到$duplicateCount个重复文件路径，已自动跳过');
+            // 检测到重复，保存一次清理后的库
+            await _saveLibrary();
           }
           
           debugPrint('所有音乐文件加载完成，共${_musicFiles.length}首歌曲');
@@ -185,28 +244,47 @@ class MusicLibraryService extends ChangeNotifier {
         if (oldPaths != null && oldPaths.isNotEmpty) {
           debugPrint('从SharedPreferences找到${oldPaths.length}个音乐文件路径，即将迁移');
           
-          _musicFiles = [];
+          // 使用Set保存规范化路径，防止重复
+          final Set<String> normalizedPaths = {};
+          final List<MusicFile> loadedFiles = [];
+          
           for (String filePath in oldPaths) {
+            // 规范化路径
+            String normalizedPath = _normalizePath(filePath);
+            
+            // 如果路径已存在，跳过
+            if (normalizedPaths.contains(normalizedPath)) {
+              continue;
+            }
+            
+            normalizedPaths.add(normalizedPath);
+            
             // 检查文件是否仍然存在
-            if (File(filePath).existsSync()) {
+            if (File(normalizedPath).existsSync()) {
               try {
-                MusicFile musicFile = await MusicFile.fromPath(filePath);
-                _musicFiles.add(musicFile);
+                MusicFile musicFile = await MusicFile.fromPath(normalizedPath);
+                loadedFiles.add(musicFile);
               } catch (e) {
-                debugPrint('加载音乐文件失败: $filePath, 错误: $e');
+                debugPrint('加载音乐文件失败: $normalizedPath, 错误: $e');
               }
             }
           }
           
-          // 迁移后保存到新位置
+          _musicFiles = loadedFiles;
+          
+          // 迁移后保存到新格式
           await _saveLibrary();
-          debugPrint('音乐库已从SharedPreferences迁移到文件');
+          
+          // 清理旧数据
+          await prefs.remove('music_library');
+          debugPrint('迁移完成，从SharedPreferences迁移了${_musicFiles.length}首歌曲');
         }
       }
     } catch (e) {
       debugPrint('加载音乐库失败: $e');
     } finally {
       _isLoading = false;
+      _isScanning = false;
       _completeScan = true;
       notifyListeners();
     }

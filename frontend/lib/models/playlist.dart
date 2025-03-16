@@ -10,9 +10,9 @@ class Playlist {
   
   /// 歌单名称
   String name;
-  
-  /// 是否为默认歌单（收藏夹）
-  bool isDefault;
+
+  /// 歌单描述
+  String description = '';
   
   /// 创建时间
   DateTime createdAt;
@@ -29,9 +29,9 @@ class Playlist {
   Playlist({
     required this.id,
     required this.name,
-    required this.isDefault,
     required this.createdAt,
     required this.updatedAt,
+    this.description = '',
     this.coverPath,
     List<String>? songPaths,
   }) {
@@ -89,7 +89,10 @@ class Playlist {
     // 否则使用第一首歌的封面
     final songs = getSongs(allMusicFiles);
     if (songs.isNotEmpty) {
-      return songs.first.coverPath;
+      // 优先使用外部封面文件
+      if (songs.first.coverPath != null && File(songs.first.coverPath!).existsSync()) {
+        return songs.first.coverPath;
+      }
     }
     
     return null;
@@ -100,9 +103,9 @@ class Playlist {
     return Playlist(
       id: json['id'] as String,
       name: json['name'] as String,
-      isDefault: json['isDefault'] as bool,
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
+      description: json['description'] as String? ?? '',
       coverPath: json['coverPath'] as String?,
       songPaths: (json['songPaths'] as List<dynamic>?)?.cast<String>() ?? [],
     );
@@ -113,7 +116,7 @@ class Playlist {
     return {
       'id': id,
       'name': name,
-      'isDefault': isDefault,
+      'description': description,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
       'coverPath': coverPath,

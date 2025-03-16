@@ -4,14 +4,6 @@ import 'package:slahser_player/models/playlist.dart';
 import 'package:slahser_player/services/playlist_service.dart';
 import 'package:slahser_player/enums/content_type.dart';
 
-// 检查是否是需要隐藏的系统歌单
-bool isSystemPlaylistHidden(Playlist playlist) {
-  // 这里可以添加自定义的过滤逻辑
-  // 例如，可以判断特定的歌单名称或ID
-  // 当前只过滤掉默认歌单，因为它已经在固定菜单中
-  return playlist.isDefault;
-}
-
 class Sidebar extends StatefulWidget {
   final Function(ContentType) onContentTypeSelected;
   final Function(String) onPlaylistSelected;
@@ -125,9 +117,15 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
           ),
           _buildMenuItem(
             context,
-            icon: Icons.favorite,
-            title: '我喜欢的音乐',
-            contentType: ContentType.favoriteMusic,
+            icon: Icons.person,
+            title: '歌手',
+            contentType: ContentType.artists,
+          ),
+          _buildMenuItem(
+            context,
+            icon: Icons.album,
+            title: '专辑',
+            contentType: ContentType.albums,
           ),
           _buildMenuItem(
             context,
@@ -274,17 +272,12 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
       builder: (context, playlistService, child) {
         List<Playlist> playlists = playlistService.playlists;
         
-        // 过滤掉需要隐藏的系统歌单
-        List<Playlist> filteredPlaylists = playlists.where((playlist) {
-          return !isSystemPlaylistHidden(playlist);
-        }).toList();
-        
-        if (filteredPlaylists.isEmpty) {
+        if (playlists.isEmpty) {
           return const SizedBox.shrink();
         }
         
         return Column(
-          children: filteredPlaylists.map((playlist) {
+          children: playlists.map((playlist) {
             final isSelected = widget.selectedContentType == ContentType.playlist && 
                               widget.selectedPlaylistId == playlist.id;
             

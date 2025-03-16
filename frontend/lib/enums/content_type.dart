@@ -3,8 +3,11 @@ enum ContentType {
   /// 所有音乐视图
   allMusic,
   
-  /// 我喜欢的音乐（默认歌单）
-  favoriteMusic,
+  /// 歌手视图
+  artists,
+  
+  /// 专辑视图
+  albums,
   
   /// 歌单列表
   playlists,

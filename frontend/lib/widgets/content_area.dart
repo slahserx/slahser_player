@@ -7,6 +7,8 @@ import 'package:slahser_player/models/music_file.dart';
 import 'package:slahser_player/models/playlist.dart';
 import 'package:slahser_player/widgets/settings_panel.dart';
 import 'package:slahser_player/widgets/playlist_view.dart';
+import 'package:slahser_player/pages/artist_detail_page.dart';
+import 'package:slahser_player/pages/album_detail_page.dart';
 import 'dart:io';
 import '../enums/playback_state.dart';
 import 'dart:typed_data';
@@ -55,12 +57,16 @@ class _ContentAreaState extends State<ContentArea> {
           child: _buildAllMusicView(context),
         );
         break;
-      case ContentType.favoriteMusic:
-        final playlistService = Provider.of<PlaylistService>(context);
-        final defaultPlaylist = playlistService.getFavoritesPlaylist();
+      case ContentType.artists:
         content = ContentAreaTransition(
           appearing: true,
-          child: PlaylistView(playlist: defaultPlaylist),
+          child: _buildArtistsView(context),
+        );
+        break;
+      case ContentType.albums:
+        content = ContentAreaTransition(
+          appearing: true,
+          child: _buildAlbumsView(context),
         );
         break;
       case ContentType.playlists:
@@ -72,12 +78,15 @@ class _ContentAreaState extends State<ContentArea> {
       case ContentType.playlist:
         final playlistService = Provider.of<PlaylistService>(context);
         
-        // 如果没有选择播放列表ID，显示默认的我喜欢的音乐
+        // 如果没有选择播放列表ID，显示错误信息
         if (widget.selectedPlaylistId == null) {
-          final defaultPlaylist = playlistService.getFavoritesPlaylist();
-          content = ContentAreaTransition(
-            appearing: true,
-            child: PlaylistView(playlist: defaultPlaylist),
+          content = Center(
+            child: Text(
+              '未选择歌单',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
           );
         } else {
           // 获取选择的播放列表
@@ -210,7 +219,7 @@ class _ContentAreaState extends State<ContentArea> {
             ),
             child: Icon(
               Icons.music_note,
-              size: 32,
+              size: 48,
               color: Theme.of(context).colorScheme.primary,
             ),
           ),
@@ -381,7 +390,6 @@ class _ContentAreaState extends State<ContentArea> {
               final music = sortedMusicFiles[index];
               final isPlaying = audioPlayer.currentMusic?.id == music.id && 
                               audioPlayer.playbackState == PlaybackState.playing;
-              final isFavorite = playlistService.isSongInFavorites(music);
               
               return Column(
                 children: [
@@ -418,6 +426,10 @@ class _ContentAreaState extends State<ContentArea> {
                               decoration: BoxDecoration(
                                 color: Theme.of(context).colorScheme.surfaceVariant,
                                 borderRadius: BorderRadius.circular(4),
+                                border: Border.all(
+                                  color: Theme.of(context).colorScheme.outline.withOpacity(0.1),
+                                  width: 1,
+                                ),
                               ),
                               child: ClipRRect(
                                 borderRadius: BorderRadius.circular(4),
@@ -485,21 +497,6 @@ class _ContentAreaState extends State<ContentArea> {
                             ),
                             // 操作按钮区域
                             const SizedBox(width: 8),
-                            // 收藏按钮
-                            IconButton(
-                              icon: Icon(
-                                isFavorite ? Icons.favorite : Icons.favorite_border,
-                                color: isFavorite ? Colors.red : null,
-                                size: 20,
-                              ),
-                              onPressed: () {
-                                if (isFavorite) {
-                                  playlistService.removeFromFavorites(music);
-                                } else {
-                                  playlistService.addToFavorites(music);
-                                }
-                              },
-                            ),
                             // 更多选项按钮
                             IconButton(
                               icon: const Icon(Icons.more_vert, size: 20),
@@ -670,26 +667,6 @@ class _ContentAreaState extends State<ContentArea> {
                 },
               ),
               ListTile(
-                leading: Icon(
-                  playlistService.isSongInFavorites(music) 
-                      ? Icons.favorite 
-                      : Icons.favorite_border,
-                ),
-                title: Text(
-                  playlistService.isSongInFavorites(music) 
-                      ? '取消收藏' 
-                      : '收藏到我喜欢的音乐',
-                ),
-                onTap: () {
-                  Navigator.pop(context);
-                  if (playlistService.isSongInFavorites(music)) {
-                    playlistService.removeFromFavorites(music);
-                  } else {
-                    playlistService.addToFavorites(music);
-                  }
-                },
-              ),
-              ListTile(
                 leading: const Icon(Icons.delete),
                 title: const Text('从音乐库中删除'),
                 onTap: () {
@@ -763,20 +740,36 @@ class _ContentAreaState extends State<ContentArea> {
   
   // 显示创建新歌单并添加歌曲的对话框
   void _showCreatePlaylistWithSongDialog(BuildContext context, MusicFile music, PlaylistService playlistService) {
-    final TextEditingController controller = TextEditingController();
+    final TextEditingController nameController = TextEditingController();
+    final TextEditingController descriptionController = TextEditingController();
     
     showDialog(
       context: context,
       builder: (context) {
         return AlertDialog(
           title: const Text('创建新歌单'),
-          content: TextField(
-            controller: controller,
-            autofocus: true,
-            decoration: const InputDecoration(
-              labelText: '歌单名称',
-              hintText: '请输入歌单名称',
-            ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  labelText: '歌单名称',
+                  hintText: '请输入歌单名称',
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: descriptionController,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  labelText: '歌单描述',
+                  hintText: '请输入歌单描述（可选）',
+                  alignLabelWithHint: true,
+                ),
+              ),
+            ],
           ),
           actions: [
             TextButton(
@@ -787,9 +780,10 @@ class _ContentAreaState extends State<ContentArea> {
             ),
             ElevatedButton(
               onPressed: () async {
-                final name = controller.text.trim();
+                final name = nameController.text.trim();
+                final description = descriptionController.text.trim();
                 if (name.isNotEmpty) {
-                  final playlist = await playlistService.createPlaylist(name);
+                  final playlist = await playlistService.createPlaylist(name, description: description);
                   await playlistService.addSongToPlaylist(playlist.id, music);
                   if (context.mounted) {
                     Navigator.pop(context);
@@ -926,12 +920,12 @@ class _ContentAreaState extends State<ContentArea> {
               child: playlists.isEmpty
                   ? const Center(child: Text('暂无歌单，点击"新建歌单"创建一个吧！'))
                   : GridView.builder(
-                      padding: const EdgeInsets.all(16),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 4,
-                        childAspectRatio: 0.8,
-                        crossAxisSpacing: 16,
-                        mainAxisSpacing: 16,
+                        crossAxisCount: 5,
+                        childAspectRatio: 0.9,
+                        crossAxisSpacing: 12,
+                        mainAxisSpacing: 12,
                       ),
                       itemCount: playlists.length,
                       itemBuilder: (context, index) {
@@ -979,8 +973,8 @@ class _ContentAreaState extends State<ContentArea> {
                     ? Center(
                         child: Icon(
                           Icons.music_note,
-                          size: 64,
-                          color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.6),
+                          size: 80,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.4),
                         ),
                       )
                     : null,
@@ -995,7 +989,7 @@ class _ContentAreaState extends State<ContentArea> {
                   Text(
                     playlist.name,
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
+                          fontWeight: FontWeight.w500,
                         ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -1004,7 +998,7 @@ class _ContentAreaState extends State<ContentArea> {
                   Text(
                     '${playlistService.getPlaylistSongs(playlist.id).length}首歌',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
                         ),
                   ),
                 ],
@@ -1018,20 +1012,36 @@ class _ContentAreaState extends State<ContentArea> {
   
   // 显示创建歌单对话框
   void _showCreatePlaylistDialog(BuildContext context, PlaylistService playlistService) {
-    final TextEditingController controller = TextEditingController();
+    final TextEditingController nameController = TextEditingController();
+    final TextEditingController descriptionController = TextEditingController();
     
     showDialog(
       context: context,
       builder: (context) {
         return AlertDialog(
           title: const Text('新建歌单'),
-          content: TextField(
-            controller: controller,
-            autofocus: true,
-            decoration: const InputDecoration(
-              labelText: '歌单名称',
-              hintText: '请输入歌单名称',
-            ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  labelText: '歌单名称',
+                  hintText: '请输入歌单名称',
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: descriptionController,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  labelText: '歌单描述',
+                  hintText: '请输入歌单描述（可选）',
+                  alignLabelWithHint: true,
+                ),
+              ),
+            ],
           ),
           actions: [
             TextButton(
@@ -1042,9 +1052,10 @@ class _ContentAreaState extends State<ContentArea> {
             ),
             ElevatedButton(
               onPressed: () async {
-                final name = controller.text.trim();
+                final name = nameController.text.trim();
+                final description = descriptionController.text.trim();
                 if (name.isNotEmpty) {
-                  await playlistService.createPlaylist(name);
+                  await playlistService.createPlaylist(name, description: description);
                   if (context.mounted) {
                     Navigator.pop(context);
                   }
@@ -1055,6 +1066,282 @@ class _ContentAreaState extends State<ContentArea> {
           ],
         );
       },
+    );
+  }
+
+  // 添加歌手视图
+  Widget _buildArtistsView(BuildContext context) {
+    return Consumer<MusicLibraryService>(
+      builder: (context, musicLibrary, child) {
+        if (musicLibrary.isLoading) {
+          return const Center(
+            child: CircularProgressIndicator(),
+          );
+        }
+        
+        if (musicLibrary.musicFiles.isEmpty) {
+          return _buildEmptyState(context);
+        }
+        
+        // 获取所有不重复的歌手
+        final artists = musicLibrary.musicFiles
+            .map((music) => music.artist)
+            .where((artist) => artist.isNotEmpty)
+            .toSet()
+            .toList();
+        
+        // 按字母顺序排序
+        artists.sort();
+        
+        if (artists.isEmpty) {
+          return Center(
+            child: Text(
+              '没有找到歌手',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
+          );
+        }
+        
+        return GridView.builder(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 5,
+            childAspectRatio: 0.9,
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
+          ),
+          itemCount: artists.length,
+          itemBuilder: (context, index) {
+            final artist = artists[index];
+            
+            // 获取该歌手的所有歌曲
+            final artistSongs = musicLibrary.musicFiles
+                .where((music) => music.artist == artist)
+                .toList();
+            
+            return InkWell(
+              onTap: () {
+                // 显示歌手详情页面
+                _showArtistDetailPage(context, artist, artistSongs);
+              },
+              borderRadius: BorderRadius.circular(8),
+              child: Column(
+                children: [
+                  // 歌手头像
+                  Expanded(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.surfaceVariant,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: Theme.of(context).colorScheme.outline.withOpacity(0.1),
+                          width: 1,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.1),
+                            blurRadius: 4,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Icon(
+                        Icons.person,
+                        size: 80,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.4),
+                      ),
+                    ),
+                  ),
+                  // 歌手名称
+                  Text(
+                    artist,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w500,
+                        ),
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  // 歌曲数量
+                  Text(
+                    '${artistSongs.length}首歌曲',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+                          height: 1.1,
+                        ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+  
+  // 添加专辑视图
+  Widget _buildAlbumsView(BuildContext context) {
+    return Consumer<MusicLibraryService>(
+      builder: (context, musicLibrary, child) {
+        if (musicLibrary.isLoading) {
+          return const Center(
+            child: CircularProgressIndicator(),
+          );
+        }
+        
+        if (musicLibrary.musicFiles.isEmpty) {
+          return _buildEmptyState(context);
+        }
+        
+        // 获取所有不重复的专辑
+        final albums = musicLibrary.musicFiles
+            .map((music) => music.album)
+            .where((album) => album.isNotEmpty)
+            .toSet()
+            .toList();
+        
+        // 按字母顺序排序
+        albums.sort();
+        
+        if (albums.isEmpty) {
+          return Center(
+            child: Text(
+              '没有找到专辑',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
+          );
+        }
+        
+        return GridView.builder(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 5,
+            childAspectRatio: 0.75,
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
+          ),
+          itemCount: albums.length,
+          itemBuilder: (context, index) {
+            final album = albums[index];
+            
+            // 获取该专辑的所有歌曲
+            final albumSongs = musicLibrary.musicFiles
+                .where((music) => music.album == album)
+                .toList();
+            
+            // 获取专辑的第一首歌曲，用于显示封面
+            final firstSong = albumSongs.isNotEmpty ? albumSongs.first : null;
+            
+            // 获取专辑的艺术家
+            final albumArtist = albumSongs.isNotEmpty ? albumSongs.first.artist : '未知艺术家';
+            
+            return InkWell(
+              onTap: () {
+                // 显示专辑详情页面
+                _showAlbumDetailPage(context, album, albumArtist, albumSongs);
+              },
+              borderRadius: BorderRadius.circular(8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 专辑封面
+                  Expanded(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.surfaceVariant,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: Theme.of(context).colorScheme.outline.withOpacity(0.1),
+                          width: 1,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.1),
+                            blurRadius: 4,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: firstSong?.embeddedCoverBytes != null
+                            ? Image.memory(
+                                Uint8List.fromList(firstSong!.embeddedCoverBytes!),
+                                fit: BoxFit.cover,
+                              )
+                            : Center(
+                                child: Icon(
+                                  Icons.album,
+                                  size: 80,
+                                  color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.4),
+                                ),
+                              ),
+                      ),
+                    ),
+                  ),
+                  // 专辑名称
+                  Text(
+                    album,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w500,
+                        ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  // 艺术家名称
+                  Text(
+                    albumArtist,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+                          height: 1.1,
+                        ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  // 歌曲数量
+                  Text(
+                    '${albumSongs.length}首歌曲',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+                          height: 1.1,
+                        ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showArtistDetailPage(BuildContext context, String artist, List<MusicFile> artistSongs) {
+    // 使用Navigator打开歌手详情页面
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => ArtistDetailPage(
+          artist: artist, 
+          songs: artistSongs,
+        ),
+      ),
+    );
+  }
+
+  void _showAlbumDetailPage(BuildContext context, String album, String albumArtist, List<MusicFile> albumSongs) {
+    // 使用Navigator打开专辑详情页面
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => AlbumDetailPage(
+          album: album,
+          artist: albumArtist,
+          songs: albumSongs,
+        ),
+      ),
     );
   }
 } 
