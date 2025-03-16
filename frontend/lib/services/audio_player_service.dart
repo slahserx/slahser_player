@@ -741,10 +741,25 @@ class AudioPlayerService extends ChangeNotifier {
     await playMusic(songs[initialIndex]);
   }
   
+  // 清理资源
   @override
-  void dispose() {
-    _positionTimer?.cancel();
-    _audioPlayer.dispose();
+  Future<void> dispose() async {
+    // 优化销毁逻辑，使用try-catch避免异常阻塞
+    try {
+      // 停止所有计时器
+      _positionTimer?.cancel();
+      _positionTimer = null;
+      
+      // 释放播放器资源
+      try {
+        await _audioPlayer.dispose();
+      } catch (e) {
+        debugPrint('销毁播放器时出错: $e');
+      }
+    } catch (e) {
+      debugPrint('清理资源时出错: $e');
+    }
+    
     super.dispose();
   }
 } 

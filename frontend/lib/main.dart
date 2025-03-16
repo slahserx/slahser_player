@@ -29,7 +29,7 @@ Future<void> main() async {
   await windowManager.waitUntilReadyToShow(windowOptions, () async {
     await windowManager.show();
     await windowManager.focus();
-    await windowManager.setPreventClose(true);
+    await windowManager.setPreventClose(false);
     await windowManager.setResizable(true);
   });
   
