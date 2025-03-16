@@ -1,5 +1,5 @@
 #define MyAppName "Slahser Player"
-#define MyAppVersion "0.8.0"
+#define MyAppVersion "0.8.4"
 #define MyAppPublisher "Slahser Player Team"
 #define MyAppURL "https://github.com/slahserx/slahser_player"
 #define MyAppExeName "frontend.exe"
