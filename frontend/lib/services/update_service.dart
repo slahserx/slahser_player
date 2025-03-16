@@ -155,18 +155,43 @@ class UpdateService extends ChangeNotifier {
           changelog: changelog,
         );
         
+        debugPrint('GitHub最新版本: ${_latestVersion!.version}');
+        debugPrint('当前版本: ${AppVersion.current.version}');
+        
         // 检查是否有新版本
-        final hasNewVersion = _latestVersion!.hasNewerVersion(AppVersion.current);
+        final List<int> githubParts = _latestVersion!.version.split('.').map((part) => int.parse(part)).toList();
+        final List<int> currentParts = AppVersion.current.version.split('.').map((part) => int.parse(part)).toList();
+        
+        // 比较版本号
+        bool hasNewVersion = false;
+        for (int i = 0; i < githubParts.length && i < currentParts.length; i++) {
+          if (githubParts[i] > currentParts[i]) {
+            hasNewVersion = true;
+            break;
+          } else if (githubParts[i] < currentParts[i]) {
+            hasNewVersion = false;
+            break;
+          }
+        }
+        
+        // 如果主要版本号相同，但GitHub版本有更多的子版本号
+        if (!hasNewVersion && githubParts.length > currentParts.length) {
+          hasNewVersion = true;
+        }
+        
         _status = hasNewVersion ? UpdateStatus.available : UpdateStatus.upToDate;
+        debugPrint('版本比较结果: ${hasNewVersion ? "有新版本可用" : "已是最新版本"}');
       } else if (response.statusCode == 404) {
         // 没有发布版本
         _status = UpdateStatus.upToDate;
+        debugPrint('GitHub API 404: 未找到发布版本');
       } else {
         throw Exception('GitHub API返回错误: ${response.statusCode}');
       }
     } catch (e) {
       _status = UpdateStatus.error;
       _errorMessage = e.toString();
+      debugPrint('检查更新出错: $_errorMessage');
     }
 
     notifyListeners();

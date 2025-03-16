@@ -20,16 +20,14 @@ class AppVersion {
 
   /// 当前应用版本
   static final AppVersion current = AppVersion(
-    version: '0.8.0',
-    buildNumber: '47',
-    releaseDate: DateTime(2025, 3, 16),
+    version: '0.8.4',
+    buildNumber: '51',
+    releaseDate: DateTime(2025, 3, 20),
     changelog: [
-      '新增播放列表功能，支持创建、删除和编辑播放列表',
-      '优化音量控制，修复切换歌曲时音量滑块动画问题',
-      '改进用户界面，优化布局和响应式设计',
-      '新增迷你播放器模式，可在任务栏显示播放控制',
-      '添加更多音频格式支持，包括FLAC和OGG',
-      '修复多个已知BUG和稳定性问题',
+      '优化解析功能',
+      '修复歌单功能',
+      '添加更多的过渡动画',
+      '修复一些小bug',
     ],
   );
 
