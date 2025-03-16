@@ -51,6 +51,9 @@ Future<void> main() async {
   final playlistService = PlaylistService();
   await playlistService.init(musicLibraryService);
   
+  // 将歌单服务传递给音频播放服务
+  audioPlayerService.setPlaylistService(playlistService);
+  
   // 初始化更新服务
   final updateService = UpdateService();
   

@@ -361,7 +361,7 @@ class _LyricsPageState extends State<LyricsPage> {
                       ),
                     ),
                   )
-                : music.hasEmbeddedCover()
+                : music.hasEmbeddedCover
                     ? ClipRRect(
                         borderRadius: BorderRadius.circular(8),
                         child: Hero(
@@ -449,14 +449,21 @@ class _LyricsPageState extends State<LyricsPage> {
                 },
               ),
               const SizedBox(width: 16),
-              _buildControlButton(
-                context,
-                icon: isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled,
-                size: 48,
-                tooltip: isPlaying ? '暂停' : '播放',
-                onPressed: () {
-                  audioPlayer.playOrPause();
-                },
+              StreamBuilder<PlaybackState>(
+                stream: audioPlayer.playbackState,
+                initialData: PlaybackState.stopped,
+                builder: (context, snapshot) {
+                  final isPlaying = snapshot.data == PlaybackState.playing;
+                  return _buildControlButton(
+                    context,
+                    icon: isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled,
+                    size: 48,
+                    tooltip: isPlaying ? '暂停' : '播放',
+                    onPressed: () {
+                      audioPlayer.playOrPause();
+                    },
+                  );
+                }
               ),
               const SizedBox(width: 16),
               _buildControlButton(

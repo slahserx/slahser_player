@@ -37,6 +37,9 @@ class _PlaylistViewState extends State<PlaylistView> {
 
   // 构建歌单头部
   Widget _buildPlaylistHeader() {
+    final playlistService = Provider.of<PlaylistService>(context, listen: false);
+    final songs = playlistService.getPlaylistSongs(widget.playlist.id);
+    
     return Container(
       padding: const EdgeInsets.all(24),
       child: Row(
@@ -50,14 +53,14 @@ class _PlaylistViewState extends State<PlaylistView> {
               height: 160,
               decoration: BoxDecoration(
                 color: Theme.of(context).colorScheme.surfaceVariant,
-                image: widget.playlist.getCoverImage() != null
+                image: widget.playlist.getCoverImage(playlistService.allMusicFiles) != null
                     ? DecorationImage(
-                        image: FileImage(File(widget.playlist.getCoverImage()!)),
+                        image: FileImage(File(widget.playlist.getCoverImage(playlistService.allMusicFiles)!)),
                         fit: BoxFit.cover,
                       )
                     : null,
               ),
-              child: widget.playlist.getCoverImage() == null
+              child: widget.playlist.getCoverImage(playlistService.allMusicFiles) == null
                   ? Center(
                       child: Icon(
                         Icons.music_note,
@@ -77,70 +80,41 @@ class _PlaylistViewState extends State<PlaylistView> {
                 Text(
                   widget.playlist.name,
                   style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  '${widget.playlist.songs.length}首歌',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
-                      ),
+                  '包含 ${songs.length} 首歌曲',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
-                const SizedBox(height: 16),
-                // 操作按钮区
+                const SizedBox(height: 32),
+                // 操作按钮
                 Row(
                   children: [
                     ElevatedButton.icon(
                       icon: const Icon(Icons.play_arrow),
                       label: const Text('播放全部'),
+                      onPressed: songs.isEmpty ? null : _playAll,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Theme.of(context).colorScheme.primary,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 20,
-                          vertical: 12,
-                        ),
+                        foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                       ),
-                      onPressed: () {
-                        _playAll();
-                      },
                     ),
                     const SizedBox(width: 12),
-                    OutlinedButton.icon(
+                    ElevatedButton.icon(
                       icon: const Icon(Icons.shuffle),
                       label: const Text('随机播放'),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 20,
-                          vertical: 12,
-                        ),
+                      onPressed: songs.isEmpty ? null : _shufflePlay,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
+                        foregroundColor: Theme.of(context).colorScheme.onSecondaryContainer,
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                       ),
-                      onPressed: () {
-                        _shufflePlay();
-                      },
                     ),
-                    const SizedBox(width: 12),
-                    IconButton(
-                      icon: Icon(
-                        widget.playlist.isDefault
-                            ? Icons.favorite
-                            : Icons.edit,
-                        color: widget.playlist.isDefault ? Colors.red : null,
-                      ),
-                      onPressed: () {
-                        if (!widget.playlist.isDefault) {
-                          _showEditPlaylistDialog();
-                        }
-                      },
-                    ),
-                    if (!widget.playlist.isDefault)
-                      IconButton(
-                        icon: const Icon(Icons.delete),
-                        onPressed: () {
-                          _showDeletePlaylistDialog();
-                        },
-                      ),
                   ],
                 ),
               ],
@@ -151,9 +125,11 @@ class _PlaylistViewState extends State<PlaylistView> {
     );
   }
 
+  // 构建歌曲列表
   Widget _buildSongList() {
-    final songs = widget.playlist.songs;
     final audioPlayer = Provider.of<AudioPlayerService>(context);
+    final playlistService = Provider.of<PlaylistService>(context);
+    final songs = playlistService.getPlaylistSongs(widget.playlist.id);
     
     if (songs.isEmpty) {
       return Center(
@@ -161,14 +137,16 @@ class _PlaylistViewState extends State<PlaylistView> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
-              Icons.music_note,
+              Icons.music_off,
               size: 64,
-              color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
+              color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.6),
             ),
             const SizedBox(height: 16),
             Text(
-              '歌单内暂无歌曲',
-              style: Theme.of(context).textTheme.titleLarge,
+              '歌单暂无歌曲',
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             ),
           ],
         ),
@@ -176,123 +154,116 @@ class _PlaylistViewState extends State<PlaylistView> {
     }
     
     return ListView.builder(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.only(bottom: 80),
       itemCount: songs.length,
       itemBuilder: (context, index) {
         final music = songs[index];
+        final isPlaying = audioPlayer.currentMusic?.id == music.id && 
+                         audioPlayer.playbackState == PlaybackState.playing;
         
-        return StreamBuilder<PlaybackState>(
-          stream: audioPlayer.playbackState,
-          initialData: PlaybackState.stopped,
-          builder: (context, snapshot) {
-            final isPlaying = audioPlayer.currentMusic?.id == music.id && 
-                             snapshot.data == PlaybackState.playing;
-            
-            return Material(
-              color: Colors.transparent,
-              child: ListTile(
-                hoverColor: Theme.of(context).colorScheme.primary.withOpacity(0.1),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                leading: SizedBox(
-                  width: 80, // 给足够的宽度
-                  child: Row(
-                    children: [
-                      // 序号列
-                      SizedBox(
-                        width: 30,
-                        child: Text(
-                          '${index + 1}',
-                          style: TextStyle(
-                            color: isPlaying 
-                                ? Theme.of(context).colorScheme.primary
-                                : Theme.of(context).colorScheme.onSurfaceVariant,
-                            fontWeight: isPlaying ? FontWeight.bold : null,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      // 封面图片
-                      Container(
-                        width: 40,
-                        height: 40,
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.surfaceVariant,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(4),
-                          child: _buildCoverImage(music),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                title: Padding(
-                  padding: const EdgeInsets.only(left: 8.0),
-                  child: Text(
-                    music.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: isPlaying ? Theme.of(context).colorScheme.primary : null,
-                      fontWeight: isPlaying ? FontWeight.bold : null,
-                    ),
-                  ),
-                ),
-                subtitle: Padding(
-                  padding: const EdgeInsets.only(left: 8.0),
-                  child: Text(
-                    '${music.artist} · ${music.album}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: isPlaying 
-                              ? Theme.of(context).colorScheme.primary.withOpacity(0.7)
-                              : Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
-                        ),
-                  ),
-                ),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (widget.playlist.isDefault)
-                      // 只有默认歌单（我喜欢的音乐）显示收藏按钮
-                      IconButton(
-                        icon: const Icon(Icons.favorite, color: Colors.red),
-                        onPressed: () {
-                          _removeFromPlaylist(music);
-                        },
-                      )
-                    else
-                      IconButton(
-                        icon: const Icon(Icons.remove_circle_outline),
-                        onPressed: () {
-                          _removeFromPlaylist(music);
-                        },
-                      ),
-                    IconButton(
-                      icon: const Icon(Icons.more_vert),
-                      onPressed: () {
-                        _showSongOptions(music);
-                      },
-                    ),
-                  ],
-                ),
-                onTap: () {
-                  _playSong(index);
-                },
-              ),
-            );
-          },
+        return ListTile(
+          leading: Container(
+            width: 40,
+            height: 40,
+            margin: const EdgeInsets.only(left: 8),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(4),
+              color: Theme.of(context).colorScheme.surfaceVariant,
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: _buildCoverImage(music),
+          ),
+          title: Text(
+            music.title.isNotEmpty ? music.title : '未知歌曲',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: isPlaying 
+                  ? Theme.of(context).colorScheme.primary 
+                  : Theme.of(context).colorScheme.onSurface,
+              fontWeight: isPlaying ? FontWeight.bold : FontWeight.normal,
+            ),
+          ),
+          subtitle: Text(
+            music.artist.isNotEmpty ? music.artist : '未知艺术家',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: isPlaying 
+                  ? Theme.of(context).colorScheme.primary.withOpacity(0.7) 
+                  : Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+          trailing: IconButton(
+            icon: const Icon(Icons.more_vert),
+            onPressed: () => _showSongOptions(music),
+          ),
+          onTap: () => _playSong(index),
         );
       },
     );
   }
+  
+  // 构建封面图片
+  Widget _buildCoverImage(MusicFile music) {
+    if (music.coverPath != null && File(music.coverPath!).existsSync()) {
+      return Hero(
+        tag: 'cover-${music.id}',
+        child: Image.file(
+          File(music.coverPath!),
+          fit: BoxFit.cover,
+          width: 40,
+          height: 40,
+          gaplessPlayback: true,
+          errorBuilder: (context, error, stackTrace) => _buildFallbackCover(music),
+        ),
+      );
+    } else if (music.hasEmbeddedCover && music.embeddedCoverBytes != null) {
+      return Hero(
+        tag: 'embedded-cover-${music.id}',
+        child: Image.memory(
+          Uint8List.fromList(music.embeddedCoverBytes!),
+          fit: BoxFit.cover,
+          width: 40,
+          height: 40,
+          gaplessPlayback: true,
+          errorBuilder: (context, error, stackTrace) => _buildFallbackCover(music),
+        ),
+      );
+    } else {
+      return _buildFallbackCover(music);
+    }
+  }
+  
+  // 构建默认封面
+  Widget _buildFallbackCover(MusicFile music) {
+    final audioPlayer = Provider.of<AudioPlayerService>(context);
+    final isPlaying = audioPlayer.currentMusic?.id == music.id && 
+                     audioPlayer.playbackState == PlaybackState.playing;
+    
+    return Hero(
+      tag: 'no-cover-${music.id}',
+      child: Container(
+        width: 40,
+        height: 40,
+        color: isPlaying 
+            ? Theme.of(context).colorScheme.primaryContainer
+            : Theme.of(context).colorScheme.surfaceVariant,
+        child: Icon(
+          Icons.music_note,
+          size: 24,
+          color: isPlaying
+              ? Theme.of(context).colorScheme.primary
+              : Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.6),
+        ),
+      ),
+    );
+  }
 
-  // 播放所有歌曲（按顺序）
+  // 播放全部
   void _playAll() {
-    final songs = widget.playlist.songs;
+    final playlistService = Provider.of<PlaylistService>(context, listen: false);
+    final songs = playlistService.getPlaylistSongs(widget.playlist.id);
     if (songs.isEmpty) return;
 
     final audioPlayer = Provider.of<AudioPlayerService>(context, listen: false);
@@ -302,7 +273,8 @@ class _PlaylistViewState extends State<PlaylistView> {
 
   // 随机播放
   void _shufflePlay() {
-    final songs = widget.playlist.songs;
+    final playlistService = Provider.of<PlaylistService>(context, listen: false);
+    final songs = playlistService.getPlaylistSongs(widget.playlist.id);
     if (songs.isEmpty) return;
 
     final audioPlayer = Provider.of<AudioPlayerService>(context, listen: false);
@@ -313,7 +285,8 @@ class _PlaylistViewState extends State<PlaylistView> {
 
   // 播放指定歌曲
   void _playSong(int index) {
-    final songs = widget.playlist.songs;
+    final playlistService = Provider.of<PlaylistService>(context, listen: false);
+    final songs = playlistService.getPlaylistSongs(widget.playlist.id);
     if (songs.isEmpty || index >= songs.length) return;
 
     final audioPlayer = Provider.of<AudioPlayerService>(context, listen: false);
@@ -327,13 +300,13 @@ class _PlaylistViewState extends State<PlaylistView> {
     
     if (widget.playlist.isDefault) {
       // 从我喜欢的音乐中移除
-      playlistService.removeFromFavorites(music.id);
+      playlistService.removeFromFavorites(music);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('已从我喜欢的音乐中移除')),
       );
     } else {
       // 从普通歌单中移除
-      playlistService.removeSongFromPlaylist(widget.playlist.id, music.id);
+      playlistService.removeSongFromPlaylist(widget.playlist.id, music);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('已从歌单"${widget.playlist.name}"中移除')),
       );
@@ -371,19 +344,19 @@ class _PlaylistViewState extends State<PlaylistView> {
                 ),
               ListTile(
                 leading: Icon(
-                  playlistService.isSongInFavorites(music.id) 
+                  playlistService.isSongInFavorites(music) 
                       ? Icons.favorite 
                       : Icons.favorite_border,
                 ),
                 title: Text(
-                  playlistService.isSongInFavorites(music.id) 
+                  playlistService.isSongInFavorites(music) 
                       ? '取消收藏' 
                       : '收藏到我喜欢的音乐',
                 ),
                 onTap: () {
                   Navigator.pop(context);
-                  if (playlistService.isSongInFavorites(music.id)) {
-                    playlistService.removeFromFavorites(music.id);
+                  if (playlistService.isSongInFavorites(music)) {
+                    playlistService.removeFromFavorites(music);
                   } else {
                     playlistService.addToFavorites(music);
                   }
@@ -427,18 +400,19 @@ class _PlaylistViewState extends State<PlaylistView> {
                   return const SizedBox.shrink();
                 }
                 
-                final bool alreadyInPlaylist = playlist.songs.any((song) => song.id == music.id);
+                final songs = playlistService.getPlaylistSongs(playlist.id);
+                final bool alreadyInPlaylist = songs.any((song) => song.id == music.id);
                 
                 return ListTile(
                   title: Text(playlist.name),
-                  subtitle: Text('${playlist.songs.length}首歌'),
+                  subtitle: Text('${songs.length}首歌'),
                   trailing: alreadyInPlaylist 
                       ? const Icon(Icons.check, color: Colors.green) 
                       : null,
                   onTap: () {
                     Navigator.pop(context);
                     if (!alreadyInPlaylist) {
-                      playlistService.addSongToPlaylist(playlist.id, music);
+                      playlistService.addSongToPlaylist(playlist.id, music.copy());
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(content: Text('已添加到歌单"${playlist.name}"')),
                       );
@@ -498,7 +472,7 @@ class _PlaylistViewState extends State<PlaylistView> {
                 final name = controller.text.trim();
                 if (name.isNotEmpty) {
                   final playlist = await playlistService.createPlaylist(name);
-                  await playlistService.addSongToPlaylist(playlist.id, music);
+                  await playlistService.addSongToPlaylist(playlist.id, music.copy());
                   if (context.mounted) {
                     Navigator.pop(context);
                     ScaffoldMessenger.of(context).showSnackBar(
@@ -594,54 +568,6 @@ class _PlaylistViewState extends State<PlaylistView> {
           ],
         );
       },
-    );
-  }
-
-  Widget _buildCoverImage(MusicFile music) {
-    if (music.coverPath != null) {
-      return Hero(
-        tag: 'playlist-cover-${music.id}-${widget.playlist.id}',
-        child: Image.file(
-          File(music.coverPath!),
-          fit: BoxFit.cover,
-          gaplessPlayback: true,
-          cacheWidth: 100, 
-          cacheHeight: 100,
-          errorBuilder: (context, error, stackTrace) {
-            return _buildFallbackCover(music);
-          },
-        ),
-      );
-    } else if (music.hasEmbeddedCover()) {
-      return Hero(
-        tag: 'playlist-embedded-cover-${music.id}-${widget.playlist.id}',
-        child: Image.memory(
-          Uint8List.fromList(music.getCoverBytes()!),
-          fit: BoxFit.cover,
-          gaplessPlayback: true,
-          cacheWidth: 100,
-          cacheHeight: 100,
-          errorBuilder: (context, error, stackTrace) {
-            return _buildFallbackCover(music);
-          },
-        ),
-      );
-    } else {
-      return Hero(
-        tag: 'playlist-no-cover-${music.id}-${widget.playlist.id}',
-        child: _buildFallbackCover(music),
-      );
-    }
-  }
-  
-  Widget _buildFallbackCover(MusicFile music) {
-    return Container(
-      color: Theme.of(context).colorScheme.primary.withOpacity(0.2),
-      child: Icon(
-        Icons.music_note,
-        color: Theme.of(context).colorScheme.primary,
-        size: 20,
-      ),
     );
   }
 } 

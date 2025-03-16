@@ -381,7 +381,7 @@ class _ContentAreaState extends State<ContentArea> {
               final music = sortedMusicFiles[index];
               final isPlaying = audioPlayer.currentMusic?.id == music.id && 
                               audioPlayer.playbackState == PlaybackState.playing;
-              final isFavorite = playlistService.isSongInFavorites(music.id);
+              final isFavorite = playlistService.isSongInFavorites(music);
               
               return Column(
                 children: [
@@ -494,7 +494,7 @@ class _ContentAreaState extends State<ContentArea> {
                               ),
                               onPressed: () {
                                 if (isFavorite) {
-                                  playlistService.removeFromFavorites(music.id);
+                                  playlistService.removeFromFavorites(music);
                                 } else {
                                   playlistService.addToFavorites(music);
                                 }
@@ -671,19 +671,19 @@ class _ContentAreaState extends State<ContentArea> {
               ),
               ListTile(
                 leading: Icon(
-                  playlistService.isSongInFavorites(music.id) 
+                  playlistService.isSongInFavorites(music) 
                       ? Icons.favorite 
                       : Icons.favorite_border,
                 ),
                 title: Text(
-                  playlistService.isSongInFavorites(music.id) 
+                  playlistService.isSongInFavorites(music) 
                       ? '取消收藏' 
                       : '收藏到我喜欢的音乐',
                 ),
                 onTap: () {
                   Navigator.pop(context);
-                  if (playlistService.isSongInFavorites(music.id)) {
-                    playlistService.removeFromFavorites(music.id);
+                  if (playlistService.isSongInFavorites(music)) {
+                    playlistService.removeFromFavorites(music);
                   } else {
                     playlistService.addToFavorites(music);
                   }
@@ -718,11 +718,12 @@ class _ContentAreaState extends State<ContentArea> {
               itemCount: playlistService.playlists.length,
               itemBuilder: (context, index) {
                 final playlist = playlistService.playlists[index];
-                final bool alreadyInPlaylist = playlist.songs.any((song) => song.id == music.id);
+                final songs = playlistService.getPlaylistSongs(playlist.id);
+                final bool alreadyInPlaylist = songs.any((song) => song.id == music.id);
                 
                 return ListTile(
                   title: Text(playlist.name),
-                  subtitle: Text('${playlist.songs.length}首歌'),
+                  subtitle: Text('${songs.length}首歌'),
                   trailing: alreadyInPlaylist 
                       ? const Icon(Icons.check, color: Colors.green) 
                       : null,
@@ -845,19 +846,18 @@ class _ContentAreaState extends State<ContentArea> {
   Widget _buildCoverImage(MusicFile music, bool isPlaying) {
     if (music.coverPath != null) {
       return Hero(
-        tag: 'cover-${music.id}',
+        tag: 'list-cover-${music.id}',
         child: Image.file(
           File(music.coverPath!),
           fit: BoxFit.cover,
+          width: 40,
+          height: 40,
           gaplessPlayback: true,
-          errorBuilder: (context, error, stackTrace) {
-            return _buildFallbackCover(isPlaying);
-          },
         ),
       );
-    } else if (music.hasEmbeddedCover()) {
+    } else if (music.hasEmbeddedCover && music.embeddedCoverBytes != null) {
       return Hero(
-        tag: 'embedded-cover-${music.id}',
+        tag: 'list-embedded-cover-${music.id}',
         child: Image.memory(
           Uint8List.fromList(music.getCoverBytes()!),
           fit: BoxFit.cover,
@@ -869,7 +869,7 @@ class _ContentAreaState extends State<ContentArea> {
       );
     } else {
       return Hero(
-        tag: 'no-cover-${music.id}',
+        tag: 'list-no-cover-${music.id}',
         child: _buildFallbackCover(isPlaying),
       );
     }
@@ -936,7 +936,7 @@ class _ContentAreaState extends State<ContentArea> {
                       itemCount: playlists.length,
                       itemBuilder: (context, index) {
                         final playlist = playlists[index];
-                        return _buildPlaylistCard(context, playlist);
+                        return _buildPlaylistCard(context, playlist, playlistService);
                       },
                     ),
             ),
@@ -947,7 +947,7 @@ class _ContentAreaState extends State<ContentArea> {
   }
   
   // 构建歌单卡片
-  Widget _buildPlaylistCard(BuildContext context, Playlist playlist) {
+  Widget _buildPlaylistCard(BuildContext context, Playlist playlist, PlaylistService playlistService) {
     return InkWell(
       onTap: () {
         // 发送通知，通知HomePage切换到特定歌单
@@ -968,14 +968,14 @@ class _ContentAreaState extends State<ContentArea> {
                 width: double.infinity,
                 decoration: BoxDecoration(
                   color: Theme.of(context).colorScheme.surfaceVariant,
-                  image: playlist.getCoverImage() != null
+                  image: playlist.getCoverImage(playlistService.allMusicFiles) != null
                       ? DecorationImage(
-                          image: FileImage(File(playlist.getCoverImage()!)),
+                          image: FileImage(File(playlist.getCoverImage(playlistService.allMusicFiles)!)),
                           fit: BoxFit.cover,
                         )
                       : null,
                 ),
-                child: playlist.getCoverImage() == null
+                child: playlist.getCoverImage(playlistService.allMusicFiles) == null
                     ? Center(
                         child: Icon(
                           Icons.music_note,
@@ -1002,7 +1002,7 @@ class _ContentAreaState extends State<ContentArea> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '${playlist.songs.length}首歌',
+                    '${playlistService.getPlaylistSongs(playlist.id).length}首歌',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
                         ),

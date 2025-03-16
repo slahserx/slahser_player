@@ -1,21 +1,18 @@
+import 'dart:convert';
 import 'dart:io';
-
-import 'package:uuid/uuid.dart';
+import 'package:flutter/foundation.dart';
 import 'package:slahser_player/models/music_file.dart';
 
-/// 歌单模型
+/// 简化的歌单模型
 class Playlist {
   /// 歌单ID
-  final String id;
+  String id;
   
   /// 歌单名称
   String name;
   
-  /// 封面图片路径（可选）
-  String? coverImagePath;
-  
-  /// 歌曲列表
-  List<MusicFile> songs;
+  /// 是否为默认歌单（收藏夹）
+  bool isDefault;
   
   /// 创建时间
   DateTime createdAt;
@@ -23,86 +20,104 @@ class Playlist {
   /// 更新时间
   DateTime updatedAt;
   
-  /// 是否为默认歌单
-  final bool isDefault;
+  /// 歌曲路径列表（不再保存整个MusicFile对象）
+  List<String> songPaths = [];
   
-  /// 创建歌单
+  /// 歌单封面路径
+  String? coverPath;
+  
   Playlist({
     required this.id,
     required this.name,
-    this.coverImagePath,
-    required this.songs,
+    required this.isDefault,
     required this.createdAt,
     required this.updatedAt,
-    this.isDefault = false,
-  });
+    this.coverPath,
+    List<String>? songPaths,
+  }) {
+    this.songPaths = songPaths ?? [];
+  }
   
-  /// 添加歌曲
+  /// 获取歌单中的所有歌曲对象
+  List<MusicFile> getSongs(List<MusicFile> allMusicFiles) {
+    final Map<String, MusicFile> musicFilesByPath = {};
+    
+    // 创建路径到歌曲对象的映射
+    for (var music in allMusicFiles) {
+      musicFilesByPath[music.filePath.toLowerCase()] = music;
+    }
+    
+    // 根据路径获取歌曲对象
+    final songs = <MusicFile>[];
+    for (var path in songPaths) {
+      final normalizedPath = path.toLowerCase();
+      if (musicFilesByPath.containsKey(normalizedPath)) {
+        songs.add(musicFilesByPath[normalizedPath]!);
+      }
+    }
+    
+    return songs;
+  }
+  
+  /// 添加歌曲到歌单
   void addSong(MusicFile song) {
-    // 避免重复添加
-    if (!songs.any((s) => s.id == song.id)) {
-      songs.add(song);
+    if (!songPaths.contains(song.filePath)) {
+      songPaths.add(song.filePath);
       updatedAt = DateTime.now();
     }
   }
   
-  /// 移除歌曲
-  void removeSong(String songId) {
-    songs.removeWhere((s) => s.id == songId);
+  /// 从歌单中移除歌曲
+  void removeSong(MusicFile song) {
+    songPaths.remove(song.filePath);
     updatedAt = DateTime.now();
   }
   
-  /// 获取封面图片
-  String? getCoverImage() {
-    // 如果有指定封面，返回指定封面
-    if (coverImagePath != null && File(coverImagePath!).existsSync()) {
-      return coverImagePath;
+  /// 从歌单中移除特定路径的歌曲
+  void removeSongByPath(String path) {
+    songPaths.remove(path);
+    updatedAt = DateTime.now();
+  }
+  
+  /// 获取歌单封面图像（从第一首歌获取）
+  String? getCoverImage(List<MusicFile> allMusicFiles) {
+    // 如果有自定义封面，直接返回
+    if (coverPath != null && File(coverPath!).existsSync()) {
+      return coverPath;
     }
     
-    // 否则返回第一首歌曲的专辑封面
+    // 否则使用第一首歌的封面
+    final songs = getSongs(allMusicFiles);
     if (songs.isNotEmpty) {
-      for (var song in songs) {
-        if (song.coverImagePath != null && File(song.coverImagePath!).existsSync()) {
-          return song.coverImagePath;
-        }
-      }
+      return songs.first.coverPath;
     }
     
-    // 都没有则返回null
     return null;
   }
   
-  /// 从JSON反序列化
+  /// 从JSON创建歌单
   factory Playlist.fromJson(Map<String, dynamic> json) {
-    final songs = (json['songs'] as List<dynamic>)
-        .map((songJson) => MusicFile.fromJson(songJson))
-        .toList();
-    
     return Playlist(
-      id: json['id'] ?? const Uuid().v4(),
-      name: json['name'] ?? '未命名歌单',
-      coverImagePath: json['coverImagePath'],
-      songs: songs,
-      createdAt: json['createdAt'] != null
-          ? DateTime.parse(json['createdAt'])
-          : DateTime.now(),
-      updatedAt: json['updatedAt'] != null
-          ? DateTime.parse(json['updatedAt'])
-          : DateTime.now(),
-      isDefault: json['isDefault'] ?? false,
+      id: json['id'] as String,
+      name: json['name'] as String,
+      isDefault: json['isDefault'] as bool,
+      createdAt: DateTime.parse(json['createdAt'] as String),
+      updatedAt: DateTime.parse(json['updatedAt'] as String),
+      coverPath: json['coverPath'] as String?,
+      songPaths: (json['songPaths'] as List<dynamic>?)?.cast<String>() ?? [],
     );
   }
   
-  /// 序列化为JSON
+  /// 转换歌单为JSON
   Map<String, dynamic> toJson() {
     return {
       'id': id,
       'name': name,
-      'coverImagePath': coverImagePath,
-      'songs': songs.map((song) => song.toJson()).toList(),
+      'isDefault': isDefault,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
-      'isDefault': isDefault,
+      'coverPath': coverPath,
+      'songPaths': songPaths,
     };
   }
 } 

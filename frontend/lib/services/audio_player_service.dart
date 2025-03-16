@@ -6,6 +6,7 @@ import 'package:audio_session/audio_session.dart';
 import 'package:slahser_player/models/music_file.dart';
 import 'package:slahser_player/models/app_settings.dart';
 import 'package:slahser_player/services/settings_service.dart';
+import 'package:slahser_player/services/playlist_service.dart';
 import 'package:rxdart/rxdart.dart';
 import '../enums/playback_state.dart';
 
@@ -27,6 +28,9 @@ class AudioPlayerService extends ChangeNotifier {
   
   // 设置服务引用
   SettingsService? _settingsService;
+  
+  // 播放列表服务引用
+  PlaylistService? _playlistService;
   
   // 当前播放列表
   List<MusicFile> _playlist = [];
@@ -208,6 +212,11 @@ class AudioPlayerService extends ChangeNotifier {
     } catch (e) {
       debugPrint('加载音量设置失败: $e');
     }
+  }
+  
+  // 设置播放列表服务
+  void setPlaylistService(PlaylistService playlistService) {
+    _playlistService = playlistService;
   }
   
   // 更新播放模式
@@ -713,6 +722,23 @@ class AudioPlayerService extends ChangeNotifier {
     }
     
     notifyListeners();
+  }
+  
+  // 播放指定歌单
+  Future<void> playPlaylist(String playlistId, {bool shuffle = false, int initialIndex = 0}) async {
+    if (_playlistService == null) {
+      debugPrint('错误：未设置播放列表服务');
+      return;
+    }
+    
+    final songs = _playlistService!.getPlaylistSongs(playlistId);
+    if (songs.isEmpty) {
+      debugPrint('错误：歌单为空，无法播放');
+      return;
+    }
+    
+    await setPlaylist(songs, shuffle: shuffle, initialIndex: initialIndex);
+    await playMusic(songs[initialIndex]);
   }
   
   @override

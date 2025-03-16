@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as path;
 import 'package:slahser_player/models/playlist.dart';
 import 'package:slahser_player/models/music_file.dart';
 import 'package:slahser_player/services/music_library_service.dart';
@@ -10,6 +11,7 @@ import 'package:uuid/uuid.dart';
 /// 歌单服务，用于管理所有歌单
 class PlaylistService extends ChangeNotifier {
   static const String _playlistsFileName = 'playlists.json';
+  static const String _appFolderName = 'SlahserPlayer';
   
   /// 歌单列表
   final List<Playlist> _playlists = [];
@@ -17,8 +19,31 @@ class PlaylistService extends ChangeNotifier {
   /// 音乐库服务
   late MusicLibraryService _musicLibraryService;
   
+  /// 获取应用专用文件夹路径
+  Future<String> _getAppDirectoryPath() async {
+    final appDocDir = await getApplicationDocumentsDirectory();
+    final appDir = Directory(path.join(appDocDir.path, _appFolderName));
+    
+    // 确保目录存在
+    if (!await appDir.exists()) {
+      await appDir.create(recursive: true);
+      debugPrint('**** 创建应用专用文件夹: ${appDir.path} ****');
+    }
+    
+    return appDir.path;
+  }
+  
+  /// 获取歌单文件路径
+  Future<String> _getPlaylistsFilePath() async {
+    final appDirPath = await _getAppDirectoryPath();
+    return path.join(appDirPath, _playlistsFileName).replaceAll('\\', '/');
+  }
+  
   /// 获取所有歌单
   List<Playlist> get playlists => _playlists;
+  
+  /// 获取音乐库中的所有音乐文件
+  List<MusicFile> get allMusicFiles => _musicLibraryService.musicFiles;
   
   /// 获取收藏夹播放列表
   Playlist getFavoritesPlaylist() {
@@ -50,28 +75,40 @@ class PlaylistService extends ChangeNotifier {
   Future<void> init(MusicLibraryService musicLibraryService) async {
     _musicLibraryService = musicLibraryService;
     
-    // 监听音乐库变化，同步歌单
-    _musicLibraryService.addListener(() {
-      _syncPlaylistsWithLibrary();
-    });
-    
-    // 加载歌单
-    await _init();
-  }
-  
-  /// 初始化
-  Future<void> _init() async {
     // 加载歌单
     await _loadPlaylists();
     
     // 如果没有任何歌单，创建默认歌单
     if (_playlists.isEmpty) {
+      debugPrint('**** 没有找到歌单，创建默认歌单 ****');
       _createDefaultPlaylist();
       await _savePlaylists();
+    } else {
+      debugPrint('**** 成功读取${_playlists.length}个歌单，不需要创建默认歌单 ****');
     }
     
-    // 同步歌单与音乐库
-    _syncPlaylistsWithLibrary();
+    // 清理不存在的歌曲路径
+    _cleanupNonExistingPaths();
+  }
+  
+  /// 清理不存在的歌曲路径
+  void _cleanupNonExistingPaths() {
+    bool hasChanges = false;
+    
+    for (var playlist in _playlists) {
+      final originalCount = playlist.songPaths.length;
+      playlist.songPaths = playlist.songPaths.where((path) => File(path).existsSync()).toList();
+      
+      if (originalCount != playlist.songPaths.length) {
+        hasChanges = true;
+        debugPrint('**** 清理歌单"${playlist.name}"中不存在的歌曲，从${originalCount}首减少到${playlist.songPaths.length}首 ****');
+      }
+    }
+    
+    if (hasChanges) {
+      _savePlaylists();
+      notifyListeners();
+    }
   }
   
   /// 创建默认的"我喜欢的音乐"歌单
@@ -79,7 +116,7 @@ class PlaylistService extends ChangeNotifier {
     return Playlist(
       id: const Uuid().v4(),
       name: '我喜欢的音乐',
-      songs: [],
+      songPaths: [],
       createdAt: DateTime.now(),
       updatedAt: DateTime.now(),
       isDefault: true,
@@ -92,7 +129,7 @@ class PlaylistService extends ChangeNotifier {
       id: const Uuid().v4(),
       name: '我喜欢的音乐',
       isDefault: true,
-      songs: [],
+      songPaths: [],
       createdAt: DateTime.now(),
       updatedAt: DateTime.now(),
     );
@@ -103,20 +140,42 @@ class PlaylistService extends ChangeNotifier {
   /// 加载歌单
   Future<void> _loadPlaylists() async {
     try {
-      final directory = await getApplicationDocumentsDirectory();
-      final file = File('${directory.path}/${_playlistsFileName}');
+      final filePath = await _getPlaylistsFilePath();
+      debugPrint('**** 尝试从以下路径加载歌单: $filePath ****');
       
+      final file = File(filePath);
       if (await file.exists()) {
+        debugPrint('**** 歌单文件存在，开始读取 ****');
         final jsonString = await file.readAsString();
-        final List<dynamic> jsonList = jsonDecode(jsonString);
         
-        _playlists.clear();
-        for (var json in jsonList) {
-          _playlists.add(Playlist.fromJson(json));
+        if (jsonString.isNotEmpty) {
+          final List<dynamic> jsonList = jsonDecode(jsonString);
+          debugPrint('**** 成功解析JSON，找到${jsonList.length}个歌单 ****');
+          
+          _playlists.clear();
+          for (var json in jsonList) {
+            try {
+              final playlist = Playlist.fromJson(json);
+              _playlists.add(playlist);
+              debugPrint('**** 加载歌单: ${playlist.name}, 包含${playlist.songPaths.length}首歌曲路径 ****');
+            } catch (e) {
+              debugPrint('**** 解析歌单失败: $e ****');
+            }
+          }
+          debugPrint('**** 所有歌单加载完成，共${_playlists.length}个歌单 ****');
+        } else {
+          debugPrint('**** 歌单文件内容为空 ****');
+          _playlists.clear();
+          _createDefaultPlaylist();
         }
+      } else {
+        debugPrint('**** 歌单文件不存在，将创建默认歌单 ****');
+        _playlists.clear();
+        _createDefaultPlaylist();
       }
     } catch (e) {
       // 如果加载失败，创建默认歌单
+      debugPrint('**** 加载歌单失败: $e ****');
       _playlists.clear();
       _createDefaultPlaylist();
     }
@@ -125,33 +184,19 @@ class PlaylistService extends ChangeNotifier {
   /// 保存歌单
   Future<void> _savePlaylists() async {
     try {
-      final directory = await getApplicationDocumentsDirectory();
-      final file = File('${directory.path}/${_playlistsFileName}');
+      final filePath = await _getPlaylistsFilePath();
+      debugPrint('**** 准备保存${_playlists.length}个歌单到: $filePath ****');
+      
+      final file = File(filePath);
       
       final jsonList = _playlists.map((playlist) => playlist.toJson()).toList();
       final jsonString = jsonEncode(jsonList);
       
       await file.writeAsString(jsonString);
+      debugPrint('**** 歌单保存成功: ${file.path} ****');
     } catch (e) {
-      // 保存失败
-      debugPrint('保存歌单失败: $e');
+      debugPrint('**** 保存歌单失败: $e ****');
     }
-  }
-  
-  /// 同步歌单与音乐库
-  void _syncPlaylistsWithLibrary() {
-    final musicFiles = _musicLibraryService.musicFiles;
-    final musicIds = musicFiles.map((music) => music.id).toSet();
-    
-    // 遍历所有歌单
-    for (var playlist in _playlists) {
-      // 过滤掉已经不在音乐库中的歌曲
-      playlist.songs = playlist.songs.where((song) => musicIds.contains(song.id)).toList();
-    }
-    
-    // 保存更新后的歌单
-    _savePlaylists();
-    notifyListeners();
   }
   
   /// 创建新歌单
@@ -160,7 +205,7 @@ class PlaylistService extends ChangeNotifier {
       id: const Uuid().v4(),
       name: name,
       isDefault: false,
-      songs: [],
+      songPaths: [],
       createdAt: DateTime.now(),
       updatedAt: DateTime.now(),
     );
@@ -204,30 +249,44 @@ class PlaylistService extends ChangeNotifier {
   Future<void> addSongToPlaylist(String playlistId, MusicFile song) async {
     final playlist = getPlaylist(playlistId);
     if (playlist == null) {
+      debugPrint('**** 添加歌曲失败: 找不到歌单ID=$playlistId ****');
       return;
     }
     
     // 检查歌曲是否已在歌单中
-    if (playlist.songs.any((s) => s.id == song.id)) {
+    if (playlist.songPaths.contains(song.filePath)) {
+      debugPrint('**** 歌曲"${song.title}"已在歌单"${playlist.name}"中 ****');
       return;
     }
     
-    playlist.songs.add(song);
-    playlist.updatedAt = DateTime.now();
+    playlist.addSong(song);
+    debugPrint('**** 歌曲"${song.title}"已添加到歌单"${playlist.name}" ****');
     
     await _savePlaylists();
     notifyListeners();
   }
   
   /// 从歌单中移除歌曲
-  Future<void> removeSongFromPlaylist(String playlistId, String songId) async {
+  Future<void> removeSongFromPlaylist(String playlistId, MusicFile song) async {
     final playlist = getPlaylist(playlistId);
     if (playlist == null) {
       return;
     }
     
-    playlist.songs.removeWhere((song) => song.id == songId);
-    playlist.updatedAt = DateTime.now();
+    playlist.removeSong(song);
+    
+    await _savePlaylists();
+    notifyListeners();
+  }
+  
+  /// 通过路径从歌单中移除歌曲
+  Future<void> removeSongPathFromPlaylist(String playlistId, String path) async {
+    final playlist = getPlaylist(playlistId);
+    if (playlist == null) {
+      return;
+    }
+    
+    playlist.removeSongByPath(path);
     
     await _savePlaylists();
     notifyListeners();
@@ -237,19 +296,27 @@ class PlaylistService extends ChangeNotifier {
   Future<void> addToFavorites(MusicFile song) async {
     final favorites = getFavoritesPlaylist();
     await addSongToPlaylist(favorites.id, song);
-    notifyListeners();
   }
   
   /// 从收藏夹中移除歌曲
-  Future<void> removeFromFavorites(String songId) async {
+  Future<void> removeFromFavorites(MusicFile song) async {
     final favorites = getFavoritesPlaylist();
-    await removeSongFromPlaylist(favorites.id, songId);
-    notifyListeners();
+    await removeSongFromPlaylist(favorites.id, song);
   }
   
   /// 检查歌曲是否在收藏夹中
-  bool isSongInFavorites(String songId) {
+  bool isSongInFavorites(MusicFile song) {
     final favoritesPlaylist = getFavoritesPlaylist();
-    return favoritesPlaylist.songs.any((song) => song.id == songId);
+    return favoritesPlaylist.songPaths.contains(song.filePath);
+  }
+  
+  /// 获取歌单中的所有歌曲
+  List<MusicFile> getPlaylistSongs(String playlistId) {
+    final playlist = getPlaylist(playlistId);
+    if (playlist == null) {
+      return [];
+    }
+    
+    return playlist.getSongs(_musicLibraryService.musicFiles);
   }
 } 

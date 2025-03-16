@@ -18,8 +18,13 @@ class MusicFile {
   final String? lyricsPath;
   final String? coverPath;
   final Duration duration;
-  final List<int>? embeddedCoverBytes;
+  List<int>? embeddedCoverBytes;
   final int? trackNumber;
+  final String? year;
+  final String? genre;
+  final DateTime? lastModified;
+  final int? fileSize;
+  bool hasEmbeddedCover;
   
   MusicFile({
     required this.id,
@@ -34,6 +39,11 @@ class MusicFile {
     required this.duration,
     this.embeddedCoverBytes,
     this.trackNumber,
+    this.year,
+    this.genre,
+    this.lastModified,
+    this.fileSize,
+    this.hasEmbeddedCover = false,
   });
   
   // 从文件路径创建MusicFile对象
@@ -49,6 +59,20 @@ class MusicFile {
     Duration duration = const Duration(seconds: 0);
     List<int>? embeddedCoverBytes;
     int? trackNumber;
+    String? year;
+    String? genre;
+    DateTime? lastModified;
+    int? fileSize;
+    bool hasEmbeddedCover = false;
+    
+    // 获取文件信息
+    try {
+      final fileStat = await file.stat();
+      lastModified = fileStat.modified;
+      fileSize = fileStat.size;
+    } catch (e) {
+      debugPrint('获取文件信息失败: $e');
+    }
     
     // 尝试从媒体文件读取元数据
     try {
@@ -120,6 +144,14 @@ class MusicFile {
             duration = id3Tags['duration'];
             debugPrint('直接从ID3读取时长: ${duration.inSeconds}秒');
           }
+          
+          if (id3Tags.containsKey('coverBytes') && id3Tags['coverBytes'] != null) {
+            embeddedCoverBytes = id3Tags['coverBytes'] as List<int>?;
+            if (embeddedCoverBytes != null && embeddedCoverBytes!.isNotEmpty) {
+              hasEmbeddedCover = true;
+              debugPrint('从ID3标签获取到内嵌封面');
+            }
+          }
         }
       } catch (e) {
         debugPrint('直接ID3标签读取失败: $e');
@@ -164,10 +196,23 @@ class MusicFile {
           debugPrint('成功从元数据读取时长: ${duration.inSeconds}秒');
       }
       
+      // 提取年份
+      if (metadata.year != null) {
+        year = metadata.year.toString();
+        debugPrint('成功从元数据读取年份: $year');
+      }
+      
+      // 提取流派
+      if (metadata.genre != null && metadata.genre!.isNotEmpty) {
+        genre = metadata.genre;
+        debugPrint('成功从元数据读取流派: $genre');
+      }
+      
       // 提取内嵌封面
         if (metadata.albumArt != null && metadata.albumArt!.isNotEmpty) {
         embeddedCoverBytes = metadata.albumArt;
           debugPrint('成功读取内嵌封面图片');
+          hasEmbeddedCover = true;
         }
       } catch (e) {
         debugPrint('flutter_media_metadata读取失败: $e');
@@ -213,8 +258,12 @@ class MusicFile {
       debugPrint('时长无效，设置默认时长: 180秒');
     }
     
+    // 使用文件路径生成唯一ID，确保每次启动时相同文件的ID一致
+    String id = generateStableId(filePath);
+    debugPrint('为文件生成稳定ID: $id');
+    
     return MusicFile(
-      id: const Uuid().v4(),
+      id: id,
       filePath: filePath,
       fileName: fileName,
       fileExtension: fileExtension,
@@ -226,7 +275,27 @@ class MusicFile {
       duration: duration,
       embeddedCoverBytes: embeddedCoverBytes,
       trackNumber: trackNumber,
+      year: year,
+      genre: genre,
+      lastModified: lastModified,
+      fileSize: fileSize,
+      hasEmbeddedCover: hasEmbeddedCover,
     );
+  }
+  
+  // 生成稳定的ID (基于文件路径)
+  static String generateStableId(String filePath) {
+    // 规范化路径，防止不同格式导致不同的ID
+    String normalizedPath = filePath.replaceAll('\\', '/').toLowerCase();
+    
+    // 计算文件路径的哈希值
+    int hashCode = normalizedPath.hashCode;
+    
+    // 转换为32位十六进制字符串
+    String hexString = hashCode.toUnsigned(32).toRadixString(16).padLeft(8, '0');
+    
+    // 格式化为类似UUID的格式
+    return 'music-$hexString';
   }
   
   // 直接从MP3文件读取ID3标签
@@ -1025,13 +1094,8 @@ class MusicFile {
   String? get coverImagePath => coverPath;
   
   // 判断是否有封面图片（无论内嵌或外部文件）
-  bool hasCoverImage() {
+  bool hasCover() {
     return coverPath != null || (embeddedCoverBytes != null && embeddedCoverBytes!.isNotEmpty);
-  }
-  
-  // 判断是否有内嵌封面数据
-  bool hasEmbeddedCover() {
-    return embeddedCoverBytes != null && embeddedCoverBytes!.isNotEmpty;
   }
   
   // 获取内存中封面数据
@@ -1053,12 +1117,17 @@ class MusicFile {
       coverPath: json['coverPath'],
       duration: Duration(seconds: json['durationInSeconds'] ?? 0),
       trackNumber: json['trackNumber'],
-      // embeddedCoverBytes在保存时被排除，加载时为null
+      year: json['year'],
+      genre: json['genre'],
+      lastModified: json['lastModified'] != null ? DateTime.fromMillisecondsSinceEpoch(json['lastModified']) : null,
+      fileSize: json['fileSize'],
+      hasEmbeddedCover: json['hasEmbeddedCover'] ?? false,
     );
   }
   
   // 转换为JSON
   Map<String, dynamic> toJson() {
+    try {
     return {
       'id': id,
       'filePath': filePath,
@@ -1070,13 +1139,56 @@ class MusicFile {
       'lyricsPath': lyricsPath,
       'coverPath': coverPath,
       'durationInSeconds': duration.inSeconds,
-      'trackNumber': trackNumber,
-      // 不保存embeddedCoverBytes，因为太大可能导致序列化问题
-    };
+        'trackNumber': trackNumber,
+        'year': year,
+        'genre': genre,
+        'lastModified': lastModified?.millisecondsSinceEpoch,
+        'fileSize': fileSize,
+        'hasEmbeddedCover': hasEmbeddedCover,
+        // 不保存embeddedCoverBytes，因为太大可能导致序列化问题
+      };
+    } catch (e) {
+      debugPrint('序列化音乐文件失败: $e');
+      // 返回最小化的JSON
+      return {
+        'id': id,
+        'filePath': filePath,
+        'fileName': fileName,
+        'fileExtension': fileExtension,
+        'title': title,
+        'artist': artist,
+        'album': album,
+        'durationInSeconds': duration.inSeconds,
+        'hasEmbeddedCover': hasEmbeddedCover,
+      };
+    }
   }
   
   @override
   String toString() {
     return 'MusicFile{title: $title, artist: $artist, album: $album}';
+  }
+  
+  // 创建MusicFile的副本，包括embeddedCoverBytes
+  MusicFile copy() {
+    return MusicFile(
+      id: id,
+      filePath: filePath,
+      fileName: fileName,
+      fileExtension: fileExtension,
+      title: title,
+      artist: artist,
+      album: album,
+      lyricsPath: lyricsPath,
+      coverPath: coverPath,
+      duration: duration,
+      trackNumber: trackNumber,
+      year: year,
+      genre: genre,
+      lastModified: lastModified,
+      fileSize: fileSize,
+      hasEmbeddedCover: hasEmbeddedCover,
+      embeddedCoverBytes: embeddedCoverBytes != null ? List<int>.from(embeddedCoverBytes!) : null,
+    );
   }
 } 

@@ -196,7 +196,7 @@ class PlayerControls extends StatelessWidget {
                                               ),
                                             ),
                                           )
-                                        : currentMusic?.hasEmbeddedCover() ?? false
+                                        : currentMusic?.hasEmbeddedCover == true && currentMusic?.embeddedCoverBytes != null
                                             ? ClipRRect(
                                                 borderRadius: BorderRadius.circular(4),
                                                 child: Hero(
