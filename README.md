@@ -4,8 +4,8 @@
 
 
 ## 安装
-- [安装版 (.exe)](https://github.com/slahserx/slahser_player/releases/download/v0.8.4/slahser_player_setup_0.8.4.exe) - 推荐大多数用户使用
-- [便携版 (.zip)](https://github.com/slahserx/slahser_player/releases/download/v0.8.4/slahser_player_0.8.4_portable.zip) - 无需安装，解压即用
+- [安装版 (.exe)](https://github.com/slahserx/slahser_player/releases/download/v0.9.0/slahser_player_setup_0.9.0.exe) - 推荐大多数用户使用
+- [便携版 (.zip)](https://github.com/slahserx/slahser_player/releases/download/v0.9.0/slahser_player_0.9.0_portable.zip) - 无需安装，解压即用
 
 
 ## 技术栈
