@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 import 'package:flutter_media_metadata/flutter_media_metadata.dart';
 import 'package:flutter/foundation.dart';
 import 'package:gbk_codec/gbk_codec.dart';
+import 'package:slahser_player/services/file_service.dart';
 
 class MusicFile {
   final String id;
@@ -19,12 +20,14 @@ class MusicFile {
   final String? coverPath;
   final Duration duration;
   List<int>? embeddedCoverBytes;
+  List<String>? embeddedLyrics; // 存储内嵌歌词
   final int? trackNumber;
   final String? year;
   final String? genre;
   final DateTime? lastModified;
   final int? fileSize;
   bool hasEmbeddedCover;
+  bool hasEmbeddedLyrics; // 是否有内嵌歌词
   bool isFavorite;
   int playCount;
   DateTime? lastPlayed;
@@ -41,12 +44,14 @@ class MusicFile {
     this.coverPath,
     required this.duration,
     this.embeddedCoverBytes,
+    this.embeddedLyrics,
     this.trackNumber,
     this.year,
     this.genre,
     this.lastModified,
     this.fileSize,
     this.hasEmbeddedCover = false,
+    this.hasEmbeddedLyrics = false,
     this.isFavorite = false,
     this.playCount = 0,
     this.lastPlayed,
@@ -64,12 +69,14 @@ class MusicFile {
     String album = '未知专辑';
     Duration duration = const Duration(seconds: 0);
     List<int>? embeddedCoverBytes;
+    List<String>? embeddedLyrics;
     int? trackNumber;
     String? year;
     String? genre;
     DateTime? lastModified;
     int? fileSize;
     bool hasEmbeddedCover = false;
+    bool hasEmbeddedLyrics = false;
     
     // 获取文件信息
     try {
@@ -90,7 +97,15 @@ class MusicFile {
         album = metadata['album'] ?? album;
         duration = metadata['duration'] ?? duration;
         embeddedCoverBytes = metadata['coverBytes'] as List<int>?;
+        embeddedLyrics = metadata['lyrics'] as List<String>?;
         trackNumber = metadata['trackNumber'] as int?;
+        year = metadata['year'] as String?;
+        genre = metadata['genre'] as String?;
+        
+        if (embeddedLyrics != null && embeddedLyrics.isNotEmpty) {
+          hasEmbeddedLyrics = true;
+          debugPrint('MP3文件包含内嵌歌词');
+        }
       } else {
         // 使用标准元数据读取
         final metadata = await MetadataRetriever.fromFile(File(filePath));
@@ -99,10 +114,22 @@ class MusicFile {
         album = metadata.albumName ?? album;
         duration = Duration(milliseconds: metadata.trackDuration ?? 0);
         embeddedCoverBytes = metadata.albumArt;
+        
         // 尝试获取曲目编号
         if (metadata.trackNumber != null) {
           trackNumber = int.tryParse(metadata.trackNumber.toString());
         }
+        
+        // 尝试获取年份
+        if (metadata.year != null) {
+          year = metadata.year.toString();
+        }
+        
+        // 尝试获取流派
+        genre = metadata.genre;
+        
+        // 注意: flutter_media_metadata包的Metadata类不支持直接获取歌词
+        // 将通过其他方式尝试获取歌词内容
       }
     } catch (e) {
       debugPrint('读取元数据失败：$e');
@@ -129,13 +156,48 @@ class MusicFile {
     String? lyricsFilePath;
     try {
       final lyricsPath = '${filePath.substring(0, filePath.lastIndexOf('.'))}';
-      List<String> lyricsExtensions = ['.lrc', '.LRC'];
-      for (final ext in lyricsExtensions) {
+      
+      // 更全面的歌词文件扩展名检查
+      for (final ext in FileService.supportedLyricFormats.map((e) => '.$e')) {
         final lrcFilePath = '$lyricsPath$ext';
         if (await File(lrcFilePath).exists()) {
           debugPrint('找到歌词文件: $lrcFilePath');
           lyricsFilePath = lrcFilePath;
           break;
+        }
+      }
+      
+      // 如果在同名文件中找不到，尝试在目录中查找与歌曲标题匹配的歌词文件
+      if (lyricsFilePath == null) {
+        final directory = path.dirname(filePath);
+        final dir = Directory(directory);
+        final files = await dir.list().toList();
+        
+        // 准备歌曲标题的不同形式，用于匹配
+        final searchTitles = [
+          title.toLowerCase(),
+          title.replaceAll(RegExp(r'[^\w\s]'), '').toLowerCase(),
+          fileNameWithoutExt.toLowerCase()
+        ];
+        
+        for (final entity in files) {
+          if (entity is File) {
+            final ext = path.extension(entity.path).toLowerCase();
+            if (FileService.supportedLyricFormats.contains(ext.replaceFirst('.', ''))) {
+              final basename = path.basenameWithoutExtension(entity.path).toLowerCase();
+              
+              // 检查是否与任何标题形式匹配
+              for (final searchTitle in searchTitles) {
+                if (basename.contains(searchTitle) || searchTitle.contains(basename)) {
+                  lyricsFilePath = entity.path;
+                  debugPrint('找到匹配的歌词文件: $lyricsFilePath');
+                  break;
+                }
+              }
+              
+              if (lyricsFilePath != null) break;
+            }
+          }
         }
       }
     } catch (e) {
@@ -178,7 +240,9 @@ class MusicFile {
       duration: duration,
       coverPath: coverPath,
       embeddedCoverBytes: embeddedCoverBytes,
+      embeddedLyrics: embeddedLyrics,
       hasEmbeddedCover: hasEmbeddedCover,
+      hasEmbeddedLyrics: hasEmbeddedLyrics,
       trackNumber: trackNumber,
       year: year,
       genre: genre,
@@ -312,16 +376,27 @@ class MusicFile {
                 result['album'] = album;
                 debugPrint('解析到专辑: $album');
               }
-            } else if (['TLEN', 'TLE'].contains(frameId)) { // 时长
-              String durationStr = _decodeTextFromFrameData(frameData, frameId);
-              if (durationStr.isNotEmpty) {
-                try {
-                  final durationMs = int.parse(durationStr);
-                  result['duration'] = Duration(milliseconds: durationMs);
-                  debugPrint('解析到时长: ${durationMs}ms');
-                } catch (e) {
-                  debugPrint('解析时长字符串失败: $durationStr');
+            } else if (['TYER', 'TYE', 'TDRC'].contains(frameId)) { // 年份
+              String year = _decodeTextFromFrameData(frameData, frameId);
+              if (year.isNotEmpty) {
+                result['year'] = year;
+                debugPrint('解析到年份: $year');
+              }
+            } else if (['TCON', 'TCO'].contains(frameId)) { // 流派
+              String genre = _decodeTextFromFrameData(frameData, frameId);
+              if (genre.isNotEmpty) {
+                result['genre'] = genre;
+                debugPrint('解析到流派: $genre');
+              }
+            } else if (['APIC', 'PIC'].contains(frameId)) { // 内嵌封面
+              try {
+                List<int>? imageBytes = _extractImageFromAPICFrame(frameData, frameId);
+                if (imageBytes != null) {
+                  result['coverBytes'] = imageBytes;
+                  debugPrint('解析到封面图片: ${imageBytes.length} 字节');
                 }
+              } catch (e) {
+                debugPrint('解析封面图片失败: $e');
               }
             } else if (['TRCK', 'TRK'].contains(frameId)) { // 曲目编号
               String trackStr = _decodeTextFromFrameData(frameData, frameId);
@@ -334,6 +409,33 @@ class MusicFile {
                 } catch (e) {
                   debugPrint('解析曲目编号失败: $trackStr');
                 }
+              }
+            } else if (['USLT', 'ULT'].contains(frameId)) { // 非同步歌词
+              try {
+                String lyricsText = _extractLyricsFromUSLTFrame(frameData, frameId);
+                if (lyricsText.isNotEmpty) {
+                  // 将歌词文本按行分割并存储
+                  List<String> lyrics = lyricsText.split('\n')
+                      .where((line) => line.trim().isNotEmpty)
+                      .toList();
+                  
+                  if (lyrics.isNotEmpty) {
+                    result['lyrics'] = lyrics;
+                    debugPrint('解析到非同步歌词: ${lyrics.length} 行');
+                  }
+                }
+              } catch (e) {
+                debugPrint('解析非同步歌词失败: $e');
+              }
+            } else if (['SYLT', 'SLT'].contains(frameId)) { // 同步歌词
+              try {
+                List<String> syncedLyrics = _extractLyricsFromSYLTFrame(frameData, frameId);
+                if (syncedLyrics.isNotEmpty && !result.containsKey('lyrics')) {
+                  result['lyrics'] = syncedLyrics;
+                  debugPrint('解析到同步歌词: ${syncedLyrics.length} 行');
+                }
+              } catch (e) {
+                debugPrint('解析同步歌词失败: $e');
               }
             }
             
@@ -382,117 +484,7 @@ class MusicFile {
         }
       }
       
-      // 如果没有从ID3标签获取到时长，尝试计算MP3帧头来估算时长
-      if (!result.containsKey('duration')) {
-        debugPrint('尝试通过解析MP3帧头估算时长...');
-        
-        // 寻找第一个MP3帧的位置（跳过ID3v2标签）
-        int startPos = 0;
-        if (fileSize > 10 && 
-            header[0] == 0x49 && // 'I'
-            header[1] == 0x44 && // 'D'
-            header[2] == 0x33) { // '3'
-          
-          final tagSize = ((header[6] & 0x7F) << 21) |
-                         ((header[7] & 0x7F) << 14) |
-                         ((header[8] & 0x7F) << 7) |
-                         (header[9] & 0x7F);
-          startPos = 10 + tagSize;
-        }
-        
-        try {
-          // 读取更多数据用于查找MP3帧
-          final searchSize = min(4096, fileSize - startPos);
-          final searchBytes = await file.openRead(startPos, startPos + searchSize).toList();
-          final searchData = Uint8List.fromList(searchBytes.expand((x) => x).toList());
-          
-          // 查找MPEG帧同步标记（每个有效的MP3帧都以0xFF开头）
-          for (int i = 0; i < searchData.length - 4; i++) {
-            if ((searchData[i] == 0xFF) && ((searchData[i + 1] & 0xE0) == 0xE0)) {
-              // 可能找到MP3帧头
-              debugPrint('在偏移 ${startPos + i} 找到可能的MP3帧头');
-              
-              // 解析帧头信息
-              final versionBits = (searchData[i + 1] & 0x18) >> 3;
-              final layerBits = (searchData[i + 1] & 0x06) >> 1;
-              final bitrateIndex = (searchData[i + 2] & 0xF0) >> 4;
-              final samplingRateIndex = (searchData[i + 2] & 0x0C) >> 2;
-              
-              // 确定版本
-              String version;
-              switch (versionBits) {
-                case 0: version = '2.5'; break;
-                case 2: version = '2'; break;
-                case 3: version = '1'; break;
-                default: version = 'unknown';
-              }
-              
-              // 确定层
-              int layer;
-              switch (layerBits) {
-                case 1: layer = 3; break; // Layer III
-                case 2: layer = 2; break; // Layer II
-                case 3: layer = 1; break; // Layer I
-                default: layer = 0;
-              }
-              
-              debugPrint('版本: MPEG-$version, 层: $layer');
-              
-              // 如果是有效的MP3帧
-              if (version != 'unknown' && layer > 0) {
-                // 比特率表（索引 -> kbps）
-                final bitrateTable = {
-                  // MPEG 1, Layer III
-                  '1-3': [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320],
-                  // MPEG 2/2.5, Layer III
-                  '2-3': [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160],
-                  // MPEG 1, Layer II
-                  '1-2': [0, 32, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 384],
-                  // MPEG 2/2.5, Layer II
-                  '2-2': [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160],
-                  // MPEG 1, Layer I
-                  '1-1': [0, 32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448],
-                  // MPEG 2/2.5, Layer I
-                  '2-1': [0, 32, 48, 56, 64, 80, 96, 112, 128, 144, 160, 176, 192, 224, 256],
-                };
-                
-                // 采样率表（索引 -> Hz）
-                final sampleRateTable = {
-                  '1': [44100, 48000, 32000],
-                  '2': [22050, 24000, 16000],
-                  '2.5': [11025, 12000, 8000],
-                };
-                
-                // 获取比特率和采样率
-                final bitrateKey = version == '1' ? '1-$layer' : '2-$layer';
-                final bitrate = bitrateTable[bitrateKey]?[bitrateIndex] ?? 0;
-                final sampleRate = sampleRateTable[version]?[samplingRateIndex] ?? 0;
-                
-                if (bitrate > 0 && sampleRate > 0) {
-                  debugPrint('比特率: $bitrate kbps, 采样率: $sampleRate Hz');
-                  
-                  // 估算时长（秒）= 文件大小（位）/ 比特率（位/秒）
-                  final dataSize = fileSize - startPos;
-                  final estimatedSeconds = (dataSize * 8) / (bitrate * 1000);
-                  
-                  // 确保时长是一个合理的值
-                  if (estimatedSeconds > 0 && estimatedSeconds < 10800) { // 最大3小时
-                    result['duration'] = Duration(seconds: estimatedSeconds.round());
-                    debugPrint('估算时长: ${estimatedSeconds.round()}秒');
-                    
-                    // 找到一个有效帧后退出
-                    break;
-                  }
-                }
-              }
-            }
-          }
-        } catch (e) {
-          debugPrint('解析MP3帧头失败: $e');
-        }
-      }
-      
-      // 如果从ID3v2和MP3帧头都没有获取到时长，尝试使用文件大小粗略估算
+      // 如果没有从ID3v2和MP3帧头都没有获取到时长，尝试使用文件大小粗略估算
       if (!result.containsKey('duration')) {
         // 使用平均比特率估算
         final avgBitrate = 128 * 1000; // 假设平均128kbps
@@ -1043,6 +1035,29 @@ class MusicFile {
     return embeddedCoverBytes;
   }
   
+  // 获取歌词内容（优先使用外部歌词文件，其次使用内嵌歌词）
+  Future<List<String>?> getLyrics() async {
+    // 优先检查外部歌词文件
+    if (lyricsPath != null) {
+      try {
+        final file = File(lyricsPath!);
+        if (await file.exists()) {
+          final String content = await file.readAsString();
+          return content.split('\n');
+        }
+      } catch (e) {
+        debugPrint('读取外部歌词文件失败: $e');
+      }
+    }
+    
+    // 其次使用内嵌歌词
+    if (hasEmbeddedLyrics && embeddedLyrics != null) {
+      return embeddedLyrics;
+    }
+    
+    return null;
+  }
+  
   // 从JSON创建MusicFile对象
   factory MusicFile.fromJson(Map<String, dynamic> json) {
     // 尝试从Base64字符串恢复封面图片数据
@@ -1053,6 +1068,21 @@ class MusicFile {
         debugPrint('从JSON中恢复封面图片数据，大小: ${coverBytes.length} 字节');
       } catch (e) {
         debugPrint('解码封面图片数据失败: $e');
+      }
+    }
+    
+    // 尝试恢复内嵌歌词数据
+    List<String>? lyrics;
+    if (json['embeddedLyrics'] != null) {
+      try {
+        if (json['embeddedLyrics'] is List) {
+          lyrics = (json['embeddedLyrics'] as List).cast<String>();
+        } else if (json['embeddedLyrics'] is String) {
+          lyrics = (json['embeddedLyrics'] as String).split('\n');
+        }
+        debugPrint('从JSON中恢复内嵌歌词，行数: ${lyrics?.length ?? 0}');
+      } catch (e) {
+        debugPrint('解码内嵌歌词数据失败: $e');
       }
     }
     
@@ -1073,6 +1103,8 @@ class MusicFile {
       lastModified: json['lastModified'] != null ? DateTime.fromMillisecondsSinceEpoch(json['lastModified']) : null,
       fileSize: json['fileSize'],
       hasEmbeddedCover: json['hasEmbeddedCover'] ?? false,
+      hasEmbeddedLyrics: json['hasEmbeddedLyrics'] ?? false,
+      embeddedLyrics: lyrics,
       isFavorite: json['isFavorite'] ?? false,
       playCount: json['playCount'] ?? 0,
       lastPlayed: json['lastPlayed'] != null ? DateTime.fromMillisecondsSinceEpoch(json['lastPlayed']) : null,
@@ -1082,57 +1114,57 @@ class MusicFile {
   
   // 转换为JSON
   Map<String, dynamic> toJson() {
-    try {
-      // 将封面图片数据转换为Base64字符串
-      String? coverBase64;
-      if (embeddedCoverBytes != null && embeddedCoverBytes!.isNotEmpty) {
-        try {
-          coverBase64 = base64Encode(embeddedCoverBytes!);
-        } catch (e) {
-          debugPrint('编码封面图片数据失败: $e');
-        }
-      }
-      
-      return {
-        'id': id,
-        'filePath': filePath,
-        'fileName': fileName,
-        'fileExtension': fileExtension,
-        'title': title,
-        'artist': artist,
-        'album': album,
-        'lyricsPath': lyricsPath,
-        'coverPath': coverPath,
-        'durationInSeconds': duration.inSeconds,
-        'trackNumber': trackNumber,
-        'year': year,
-        'genre': genre,
-        'lastModified': lastModified?.millisecondsSinceEpoch,
-        'fileSize': fileSize,
-        'embeddedCoverBytes': coverBase64,
-        'hasEmbeddedCover': hasEmbeddedCover,
-        'isFavorite': isFavorite,
-        'playCount': playCount,
-        'lastPlayed': lastPlayed?.millisecondsSinceEpoch,
-      };
-    } catch (e) {
-      debugPrint('序列化音乐文件失败: $e');
-      // 返回最小化的JSON
-      return {
-        'id': id,
-        'filePath': filePath,
-        'fileName': fileName,
-        'fileExtension': fileExtension,
-        'title': title,
-        'artist': artist,
-        'album': album,
-        'durationInSeconds': duration.inSeconds,
-        'hasEmbeddedCover': hasEmbeddedCover,
-        'isFavorite': isFavorite,
-        'playCount': playCount,
-        'lastPlayed': lastPlayed?.millisecondsSinceEpoch,
-      };
+    final json = {
+      'id': id,
+      'filePath': filePath,
+      'fileName': fileName,
+      'fileExtension': fileExtension,
+      'title': title,
+      'artist': artist,
+      'album': album,
+      'lyricsPath': lyricsPath,
+      'coverPath': coverPath,
+      'durationInSeconds': duration.inSeconds,
+      'fileSize': fileSize,
+      'hasEmbeddedCover': hasEmbeddedCover,
+      'hasEmbeddedLyrics': hasEmbeddedLyrics,
+      'trackNumber': trackNumber,
+      'year': year,
+      'genre': genre,
+      'isFavorite': isFavorite,
+      'playCount': playCount,
+    };
+    
+    // 添加最后修改时间和最后播放时间（如果存在）
+    if (lastModified != null) {
+      json['lastModified'] = lastModified!.millisecondsSinceEpoch;
     }
+    
+    if (lastPlayed != null) {
+      json['lastPlayed'] = lastPlayed!.millisecondsSinceEpoch;
+    }
+    
+    // 如果有内嵌封面，转换为Base64存储
+    if (hasEmbeddedCover && embeddedCoverBytes != null) {
+      try {
+        // 限制封面大小，防止JSON过大
+        final maxSize = 300 * 1024; // 300KB
+        if (embeddedCoverBytes!.length > maxSize) {
+          debugPrint('封面图片过大(${embeddedCoverBytes!.length}字节)，跳过存储');
+        } else {
+          json['embeddedCoverBytes'] = base64Encode(embeddedCoverBytes!);
+        }
+      } catch (e) {
+        debugPrint('编码封面图片数据失败: $e');
+      }
+    }
+    
+    // 如果有内嵌歌词，同样存储
+    if (hasEmbeddedLyrics && embeddedLyrics != null) {
+      json['embeddedLyrics'] = embeddedLyrics;
+    }
+    
+    return json;
   }
   
   @override
@@ -1159,7 +1191,9 @@ class MusicFile {
       lastModified: lastModified,
       fileSize: fileSize,
       hasEmbeddedCover: hasEmbeddedCover,
+      hasEmbeddedLyrics: hasEmbeddedLyrics,
       embeddedCoverBytes: embeddedCoverBytes != null ? List<int>.from(embeddedCoverBytes!) : null,
+      embeddedLyrics: embeddedLyrics != null ? List<String>.from(embeddedLyrics!) : null,
       isFavorite: isFavorite,
       playCount: playCount,
       lastPlayed: lastPlayed,
@@ -1177,4 +1211,269 @@ class MusicFile {
   // 覆盖重写hashCode
   @override
   int get hashCode => id.hashCode;
+  
+  // 从USLT帧中提取歌词
+  static String _extractLyricsFromUSLTFrame(Uint8List data, String frameId) {
+    try {
+      if (data.length < 4) {
+        return '';
+      }
+      
+      // USLT帧结构: 编码(1) + 语言(3) + 内容描述 + 空字节 + 歌词文本
+      int encoding = data[0];
+      
+      // 跳过语言代码(3字节)
+      int offset = 4;
+      
+      // 根据文本编码找到内容描述的结尾
+      int contentEnd = offset;
+      switch (encoding) {
+        case 0: // ISO-8859-1
+        case 3: // UTF-8
+          while (contentEnd < data.length && data[contentEnd] != 0) {
+            contentEnd++;
+          }
+          break;
+        case 1: // UTF-16 with BOM
+        case 2: // UTF-16 without BOM
+          // UTF-16使用两个字节表示一个字符，寻找0x00 0x00表示结束
+          while (contentEnd < data.length - 1) {
+            if (data[contentEnd] == 0 && data[contentEnd + 1] == 0) {
+              break;
+            }
+            contentEnd += 2;
+          }
+          break;
+      }
+      
+      // 跳过内容描述和分隔符
+      if (contentEnd >= data.length) {
+        return '';
+      }
+      
+      // 根据编码跳过分隔符
+      if (encoding == 1 || encoding == 2) {
+        contentEnd += 2; // UTF-16 使用两个字节的分隔符
+      } else {
+        contentEnd += 1; // ISO-8859-1 和 UTF-8 使用一个字节的分隔符
+      }
+      
+      // 提取歌词文本
+      if (contentEnd >= data.length) {
+        return '';
+      }
+      
+      final lyricsData = data.sublist(contentEnd);
+      
+      // 根据编码解码文本
+      String lyrics = '';
+      switch (encoding) {
+        case 0: // ISO-8859-1
+          try {
+            // 尝试用GBK解码(常见于中文MP3)
+            lyrics = gbk.decode(lyricsData);
+          } catch (_) {
+            lyrics = String.fromCharCodes(lyricsData);
+          }
+          break;
+        case 1: // UTF-16 with BOM
+          if (lyricsData.length >= 2) {
+            if (lyricsData[0] == 0xFF && lyricsData[1] == 0xFE) {
+              // UTF-16LE (小尾序)
+              lyrics = _decodeUtf16Le(lyricsData.sublist(2));
+            } else if (lyricsData[0] == 0xFE && lyricsData[1] == 0xFF) {
+              // UTF-16BE (大尾序)
+              lyrics = _decodeUtf16Be(lyricsData.sublist(2));
+            } else {
+              // 没有BOM，假设为LE
+              lyrics = _decodeUtf16Le(lyricsData);
+            }
+          }
+          break;
+        case 2: // UTF-16BE without BOM
+          lyrics = _decodeUtf16Be(lyricsData);
+          break;
+        case 3: // UTF-8
+          try {
+            lyrics = utf8.decode(lyricsData);
+          } catch (_) {
+            lyrics = String.fromCharCodes(lyricsData);
+          }
+          break;
+      }
+      
+      return lyrics.trim();
+    } catch (e) {
+      debugPrint('解析USLT歌词失败: $e');
+      return '';
+    }
+  }
+  
+  // 从SYLT帧中提取歌词
+  static List<String> _extractLyricsFromSYLTFrame(Uint8List data, String frameId) {
+    try {
+      if (data.length < 7) { // 至少需要: 编码(1) + 语言(3) + 时间戳格式(1) + 内容类型(1) + 描述结束符(至少1)
+        return [];
+      }
+      
+      // SYLT帧结构: 编码(1) + 语言(3) + 时间戳格式(1) + 内容类型(1) + 内容描述 + 空字节 + 同步歌词
+      int encoding = data[0];
+      int timeStampFormat = data[4]; // 毫秒、帧数等
+      int contentType = data[5]; // 类型: 其他、歌词、翻译等
+      
+      // 跳过前面的数据
+      int offset = 6;
+      
+      // 跳过内容描述
+      while (offset < data.length) {
+        // 根据编码方式确定结束符
+        if (encoding == 0 || encoding == 3) { // ISO/UTF-8使用单字节00作为终止符
+          if (data[offset] == 0) {
+            offset++;
+            break;
+          }
+        } else { // UTF-16使用双字节0000作为终止符
+          if (offset + 1 < data.length && data[offset] == 0 && data[offset + 1] == 0) {
+            offset += 2;
+            break;
+          }
+        }
+        offset++;
+      }
+      
+      // 现在offset指向歌词数据的起始位置
+      List<String> lyrics = [];
+      
+      // 处理同步歌词
+      while (offset < data.length) {
+        // 寻找文本结束符
+        int textEnd = offset;
+        if (encoding == 0 || encoding == 3) { // ISO/UTF-8
+          while (textEnd < data.length && data[textEnd] != 0) {
+            textEnd++;
+          }
+        } else { // UTF-16
+          while (textEnd < data.length - 1) {
+            if (data[textEnd] == 0 && data[textEnd + 1] == 0) {
+              break;
+            }
+            textEnd += 2;
+          }
+        }
+        
+        // 无法找到结束符，可能是数据损坏
+        if (textEnd >= data.length) {
+          break;
+        }
+        
+        // 提取文本
+        final textData = data.sublist(offset, textEnd);
+        String text = '';
+        
+        // 根据编码解码文本
+        switch (encoding) {
+          case 0: // ISO-8859-1
+            try {
+              text = gbk.decode(textData);
+            } catch (_) {
+              text = String.fromCharCodes(textData);
+            }
+            break;
+          case 1: // UTF-16 with BOM
+            if (textData.length >= 2) {
+              if (textData[0] == 0xFF && textData[1] == 0xFE) {
+                text = _decodeUtf16Le(textData.sublist(2));
+              } else if (textData[0] == 0xFE && textData[1] == 0xFF) {
+                text = _decodeUtf16Be(textData.sublist(2));
+              } else {
+                text = _decodeUtf16Le(textData);
+              }
+            }
+            break;
+          case 2: // UTF-16BE without BOM
+            text = _decodeUtf16Be(textData);
+            break;
+          case 3: // UTF-8
+            try {
+              text = utf8.decode(textData);
+            } catch (_) {
+              text = String.fromCharCodes(textData);
+            }
+            break;
+        }
+        
+        if (text.isNotEmpty) {
+          lyrics.add(text);
+        }
+        
+        // 跳过文本和结束符
+        if (encoding == 0 || encoding == 3) {
+          offset = textEnd + 1;
+        } else {
+          offset = textEnd + 2;
+        }
+        
+        // 跳过时间戳(4字节)
+        if (offset + 4 <= data.length) {
+          offset += 4;
+        } else {
+          break;
+        }
+      }
+      
+      return lyrics;
+    } catch (e) {
+      debugPrint('解析SYLT同步歌词失败: $e');
+      return [];
+    }
+  }
+  
+  static List<int>? _extractImageFromAPICFrame(Uint8List data, String frameId) {
+    try {
+      if (data.length < 4) {
+        return null;
+      }
+      
+      int encoding = data[0];
+      int offset = 1;
+      
+      // 跳过MIME类型直到遇到终止符(0)
+      while (offset < data.length && data[offset] != 0) {
+        offset++;
+      }
+      
+      // 跳过终止符
+      offset++;
+      
+      // 跳过图片类型(1字节)
+      offset++;
+      
+      // 跳过描述文本直到遇到终止符
+      if (encoding == 0 || encoding == 3) { // ISO-8859-1 或 UTF-8
+        while (offset < data.length && data[offset] != 0) {
+          offset++;
+        }
+        offset++; // 跳过终止符
+      } else { // UTF-16
+        while (offset < data.length - 1) {
+          if (data[offset] == 0 && data[offset + 1] == 0) {
+            break;
+          }
+          offset += 2;
+        }
+        offset += 2; // 跳过终止符
+      }
+      
+      // 现在 offset 指向图片数据的开始
+      if (offset >= data.length) {
+        return null;
+      }
+      
+      // 返回剩余的数据作为图片
+      return data.sublist(offset).toList();
+    } catch (e) {
+      debugPrint('解析APIC图片数据失败: $e');
+      return null;
+    }
+  }
 } 

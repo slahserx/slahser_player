@@ -5,7 +5,14 @@ import 'package:path/path.dart' as path;
 class FileService {
   // 支持的音频格式
   static const List<String> supportedAudioFormats = [
-    'mp3', 'flac', 'wav', 'aac', 'ogg', 'm4a'
+    'mp3', 'flac', 'wav', 'aac', 'ogg', 'm4a',
+    'wma', 'ape', 'opus', 'aiff', 'alac', 'dsf',
+    'dff', 'mp2', 'mp4', 'webm', 'mpc'
+  ];
+  
+  // 支持的歌词格式
+  static const List<String> supportedLyricFormats = [
+    'lrc', 'txt', 'srt', 'smi', 'ass', 'vtt', 'trc'
   ];
   
   // 导入单个音乐文件
@@ -30,6 +37,25 @@ class FileService {
     }
     
     return [];
+  }
+  
+  // 导入歌词文件
+  static Future<String?> importLyricFile() async {
+    try {
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: supportedLyricFormats,
+        allowMultiple: false,
+      );
+      
+      if (result != null && result.files.single.path != null) {
+        return result.files.single.path!;
+      }
+    } catch (e) {
+      print('导入歌词文件失败: $e');
+    }
+    
+    return null;
   }
   
   // 导入文件夹

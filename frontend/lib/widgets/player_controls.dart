@@ -407,7 +407,7 @@ class PlayerControls extends StatelessWidget {
     Navigator.push(
       context,
       LyricsPageTransition(
-        page: LyricsPage(music: music),
+        page: LyricsPage(initialMusic: music),
       ),
     );
   }
@@ -501,96 +501,118 @@ class PlayerControls extends StatelessWidget {
   }
   
   void _showPlaylist(BuildContext context, AudioPlayerService audioPlayer) {
-    showModalBottomSheet(
+    showDialog(
       context: context,
-      builder: (context) => SafeArea(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  const Text(
-                    '播放队列',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
+      builder: (context) => Material(
+        type: MaterialType.transparency,
+        child: Align(
+          alignment: Alignment.centerRight,
+          child: Container(
+            width: 350,
+            height: MediaQuery.of(context).size.height,
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surface,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.2),
+                  blurRadius: 8,
+                  offset: const Offset(-2, 0),
+                ),
+              ],
+            ),
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      const Text(
+                        '播放队列',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () {
+                          Navigator.pop(context);
+                        },
+                      ),
+                    ],
                   ),
-                  const Spacer(),
-                  IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: () {
-                      Navigator.pop(context);
+                ),
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: audioPlayer.playlist.length,
+                    itemBuilder: (context, index) {
+                      final music = audioPlayer.playlist[index];
+                      final isCurrentMusic = audioPlayer.currentMusic?.id == music.id;
+                      
+                      return ListTile(
+                        leading: Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.surfaceVariant,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(4),
+                            child: music.coverPath != null
+                              ? Image.file(
+                                  File(music.coverPath!),
+                                  fit: BoxFit.cover,
+                                  width: 40,
+                                  height: 40,
+                                )
+                              : music.hasEmbeddedCover && music.embeddedCoverBytes != null
+                                ? Image.memory(
+                                    Uint8List.fromList(music.embeddedCoverBytes!),
+                                    fit: BoxFit.cover,
+                                    width: 40,
+                                    height: 40,
+                                  )
+                                : Icon(
+                                    Icons.music_note,
+                                    size: 20,
+                                    color: isCurrentMusic
+                                        ? Theme.of(context).colorScheme.primary
+                                        : Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                                  ),
+                          ),
+                        ),
+                        title: Text(
+                          music.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: isCurrentMusic ? Theme.of(context).colorScheme.primary : null,
+                            fontWeight: isCurrentMusic ? FontWeight.bold : null,
+                          ),
+                        ),
+                        subtitle: Text(
+                          music.artist,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: isCurrentMusic
+                                ? Theme.of(context).colorScheme.primary.withOpacity(0.7)
+                                : Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                          ),
+                        ),
+                        onTap: () {
+                          Navigator.pop(context);
+                          audioPlayer.playMusic(music);
+                        },
+                      );
                     },
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-            Expanded(
-              child: ListView.builder(
-                itemCount: audioPlayer.playlist.length,
-                itemBuilder: (context, index) {
-                  final music = audioPlayer.playlist[index];
-                  final isCurrentMusic = audioPlayer.currentMusic?.id == music.id;
-                  
-                  return ListTile(
-                    leading: Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.surfaceVariant,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(4),
-                        child: music.coverPath != null
-                          ? Image.file(
-                              File(music.coverPath!),
-                              fit: BoxFit.cover,
-                              width: 40,
-                              height: 40,
-                            )
-                          : music.hasEmbeddedCover && music.embeddedCoverBytes != null
-                            ? Image.memory(
-                                Uint8List.fromList(music.embeddedCoverBytes!),
-                                fit: BoxFit.cover,
-                                width: 40,
-                                height: 40,
-                              )
-                            : Icon(
-                                Icons.music_note,
-                                size: 20,
-                                color: isCurrentMusic
-                                    ? Theme.of(context).colorScheme.primary
-                                    : Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
-                              ),
-                      ),
-                    ),
-                    title: Text(
-                      music.title,
-                      style: TextStyle(
-                        color: isCurrentMusic ? Theme.of(context).colorScheme.primary : null,
-                        fontWeight: isCurrentMusic ? FontWeight.bold : null,
-                      ),
-                    ),
-                    subtitle: Text(
-                      music.artist,
-                      style: TextStyle(
-                        color: isCurrentMusic
-                            ? Theme.of(context).colorScheme.primary.withOpacity(0.7)
-                            : Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
-                      ),
-                    ),
-                    onTap: () {
-                      Navigator.pop(context);
-                      audioPlayer.playMusic(music);
-                    },
-                  );
-                },
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );

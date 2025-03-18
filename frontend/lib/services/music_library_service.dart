@@ -463,8 +463,8 @@ class MusicLibraryService extends ChangeNotifier {
     try {
       await for (var entity in dir.list(recursive: true)) {
         if (entity is File) {
-          String extension = path.extension(entity.path).toLowerCase();
-          if (['.mp3', '.flac', '.wav', '.ogg', '.m4a', '.aac'].contains(extension)) {
+          String extension = path.extension(entity.path).toLowerCase().replaceFirst('.', '');
+          if (FileService.supportedAudioFormats.contains(extension)) {
             try {
               MusicFile musicFile = await MusicFile.fromPath(entity.path);
               _musicFiles.add(musicFile);
