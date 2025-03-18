@@ -51,6 +51,19 @@ class UpdateService extends ChangeNotifier {
   // 历史版本列表，包含当前版本
   final List<AppVersion> _versionHistory = [
     AppVersion(
+      version: '0.9.1',
+      buildNumber: '59',
+      releaseDate: DateTime(2025, 3, 18),
+      changelog: [
+        '优化播放队列显示，从右侧滑出更加美观',
+        '改进歌词页面自适应布局，解决窗口缩小时溢出问题',
+        '优化歌曲切换性能，添加颜色缓存和预加载机制',
+        '增强色彩提取算法，使界面颜色更加协调',
+        '修复了多个UI布局问题',
+        '提升整体界面响应速度和流畅度',
+      ],
+    ),
+    AppVersion(
       version: '0.9.0',
       buildNumber: '58',
       releaseDate: DateTime(2025, 3, 17),
