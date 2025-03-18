@@ -8,6 +8,7 @@ import 'package:slahser_player/services/settings_service.dart';
 import 'package:slahser_player/services/playlist_service.dart';
 import 'package:slahser_player/services/update_service.dart';
 import 'package:slahser_player/theme/app_theme.dart';
+import 'utils/cache_manager.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -56,6 +57,9 @@ Future<void> main() async {
   
   // 初始化更新服务
   final updateService = UpdateService();
+  
+  // 初始化缓存管理器
+  await MusicCacheManager().initialize();
   
   // 运行应用
   runApp(

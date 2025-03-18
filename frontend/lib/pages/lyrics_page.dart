@@ -70,6 +70,9 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
   // 添加封面图片缓存
   final Map<String, Uint8List> _coverImageCache = {};
   
+  // 添加封面图片组件缓存，避免重复构建带来的闪烁
+  final Map<String?, Widget> _coverWidgetCache = {};
+  
   @override
   bool get wantKeepAlive => true; // 保持页面状态，避免重建
   
@@ -92,9 +95,14 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
       // 延迟颜色加载到didChangeDependencies中
     }
     
-    // 启动定时器，定期更新当前行和检查歌曲变化
+    // 引入防抖动变量
+    bool isUpdating = false;
+    
+    // 启动定时器，定期更新当前行和检查歌曲变化，添加防抖动机制
     _positionUpdateTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
-      if (!mounted) return;
+      if (!mounted || isUpdating) return;
+      
+      isUpdating = true;
       
       final audioPlayer = Provider.of<AudioPlayerService>(context, listen: false);
       final position = audioPlayer.position;
@@ -119,6 +127,8 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
           _updateCurrentLine(position);
         }
       }
+      
+      isUpdating = false;
     });
     
     // 订阅音频播放器的播放状态变化，确保在歌曲切换时更新歌词
@@ -171,6 +181,7 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
     _scrollController.dispose();
     _coverImageCache.clear();
     _colorCache.clear();
+    _coverWidgetCache.clear();
     super.dispose();
   }
 
@@ -336,6 +347,7 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
       }
     }
     
+    // 只有当歌词行发生变化时才更新状态，减少不必要的重绘
     if (index != _currentLineIndex) {
       setState(() {
         _currentLineIndex = index;
@@ -378,7 +390,7 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
 
   // 使用预先加载的颜色或异步提取
   void _usePreloadedColorsOrExtract(MusicFile music) {
-    if (music.id == null) return;
+    if (music.id == null || _isLoadingColors) return;
     
     // 无封面情况，直接使用主题色
     if (!music.hasEmbeddedCover && music.coverPath == null) {
@@ -400,16 +412,25 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
         _secondaryColor = cachedColors[1];
       });
       debugPrint('使用预先缓存的颜色: ${music.title}');
-    } else {
-      // 有封面，异步提取颜色
-      _extractColorsFromCover(music);
+      return;
+    } else if (_colorCache.containsKey(music.id)) {
+      // 使用本地缓存的颜色
+      setState(() {
+        _primaryColor = _colorCache[music.id]![0];
+        _secondaryColor = _colorCache[music.id]![1];
+      });
+      debugPrint('使用本地缓存的颜色: ${music.title}');
+      return;
     }
+    
+    // 有封面，异步提取颜色
+    _extractColorsFromCover(music);
   }
 
   @override
   Widget build(BuildContext context) {
     super.build(context); // 需要调用父类的build方法
-    final audioPlayer = Provider.of<AudioPlayerService>(context, listen: true); // 修改为 listen: true 确保能接收到更新
+    final audioPlayer = Provider.of<AudioPlayerService>(context, listen: false); // 修改为 listen: false 减少不必要的重建
     
     return StreamBuilder<PlaybackState>(
       stream: audioPlayer.playbackState,
@@ -443,96 +464,95 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
         }
         
         return Scaffold(
-          // 使用专辑封面提取的颜色作为渐变背景色
-          body: Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  _primaryColor,
-                  _secondaryColor,
-                ],
+          // 使用专辑封面提取的颜色作为渐变背景色，注意使用ValueKey确保背景不会频繁重建
+          body: KeyedSubtree(
+            key: ValueKey('background-${displayMusic.id}'),
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    _primaryColor,
+                    _secondaryColor,
+                  ],
+                ),
               ),
-            ),
-            child: Consumer<AudioPlayerService>(
-              builder: (context, audioPlayer, child) {
-                final position = audioPlayer.position;
-                final duration = audioPlayer.duration;
-                
-                // 再次检查当前音乐是否变化
-                final currentMusic = audioPlayer.currentMusic;
-                if (currentMusic != null && (_currentDisplayedMusic == null || currentMusic.id != _currentDisplayedMusic!.id)) {
-                  // 在Consumer中检测到歌曲变化，安排一个微任务在构建后更新状态
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    _handleMusicChange(currentMusic);
-                  });
-                }
-                
-                return Stack(
-                  children: [
-                    // 主内容 - 使用固定key防止重建，并使用非动画区域展示内容
-                    Row(
-                      key: displayMusic != null ? ValueKey('row-${displayMusic.id}') : null,
-                      children: [
-                        // 左侧：歌曲信息
-                        SizedBox(
-                          width: 400,
-                          child: _buildMusicInfo(
-                            context, 
-                            displayMusic, 
-                            audioPlayer, 
-                            position, 
-                            duration,
-                            key: displayMusic != null ? ValueKey('info-${displayMusic.id}') : null,
-                          ),
-                        ),
-                        // 右侧：歌词
-                        Expanded(
-                          child: MouseRegion(
-                            onEnter: (_) => _showLyricsControlsTemporarily(),
-                            onHover: (_) => _showLyricsControlsTemporarily(),
-                            child: _buildLyrics(
-                              context, 
-                              audioPlayer,
-                              key: displayMusic != null ? ValueKey('lyrics-${displayMusic.id}') : null,
+              child: Consumer<AudioPlayerService>(
+                builder: (context, audioPlayer, child) {
+                  final position = audioPlayer.position;
+                  final duration = audioPlayer.duration;
+                  
+                  // 在这里不监听音乐变化，通过StreamBuilder已经处理了
+                  
+                  return Stack(
+                    children: [
+                      // 主内容 - 使用固定key防止重建，并使用非动画区域展示内容
+                      Row(
+                        key: displayMusic != null ? ValueKey('row-${displayMusic.id}') : null,
+                        children: [
+                          // 左侧：歌曲信息
+                          SizedBox(
+                            width: 400,
+                            // 封装音乐信息部分，避免因进度条更新导致封面图片重建
+                            child: RepaintBoundary(
+                              child: _buildMusicInfo(
+                                context, 
+                                displayMusic, 
+                                audioPlayer, 
+                                position, 
+                                duration,
+                                key: displayMusic != null ? ValueKey('info-${displayMusic.id}') : null,
+                              ),
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                    
-                    // 顶部返回按钮 - 始终显示，去掉背景
-                    Positioned(
-                      top: 0,
-                      left: 0,
-                      child: Container(
-                        padding: const EdgeInsets.all(16),
-                        child: MouseRegion(
-                          cursor: SystemMouseCursors.click,
-                          child: Material(
-                            color: Colors.transparent,
-                            child: Tooltip(
-                              message: '返回',
-                              child: InkWell(
-                                onTap: () {
-                                  Navigator.of(context).pop();
-                                },
-                                borderRadius: BorderRadius.circular(20),
-                                child: const Icon(
-                                  Icons.arrow_back,
-                                  size: 24,
-                                  color: Colors.white,
+                          // 右侧：歌词
+                          Expanded(
+                            child: MouseRegion(
+                              onEnter: (_) => _showLyricsControlsTemporarily(),
+                              onHover: (_) => _showLyricsControlsTemporarily(),
+                              child: _buildLyrics(
+                                context, 
+                                audioPlayer,
+                                key: displayMusic != null ? ValueKey('lyrics-${displayMusic.id}') : null,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      
+                      // 顶部返回按钮 - 始终显示，去掉背景
+                      Positioned(
+                        top: 0,
+                        left: 0,
+                        child: Container(
+                          padding: const EdgeInsets.all(16),
+                          child: MouseRegion(
+                            cursor: SystemMouseCursors.click,
+                            child: Material(
+                              color: Colors.transparent,
+                              child: Tooltip(
+                                message: '返回',
+                                child: InkWell(
+                                  onTap: () {
+                                    Navigator.of(context).pop();
+                                  },
+                                  borderRadius: BorderRadius.circular(20),
+                                  child: const Icon(
+                                    Icons.arrow_back,
+                                    size: 24,
+                                    color: Colors.white,
+                                  ),
                                 ),
                               ),
                             ),
                           ),
                         ),
                       ),
-                    ),
-                  ],
-                );
-              },
+                    ],
+                  );
+                },
+              ),
             ),
           ),
         );
@@ -563,6 +583,7 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
         ),
       ),
       child: SingleChildScrollView(
+        physics: const BouncingScrollPhysics(), // 添加更平滑的滚动效果
         child: ConstrainedBox(
           constraints: BoxConstraints(
             minHeight: MediaQuery.of(context).size.height, // 确保内容至少和屏幕一样高
@@ -591,8 +612,8 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
                         ),
                       ],
                     ),
-                    // 封面图片内容 - 使用自定义组件显示
-                    child: buildCoverDisplay(context, music),
+                    // 封面图片内容 - 通过key确保在状态更新时保持稳定
+                    child: _buildCoverImage(context, music),
                   ),
                   
                   // 歌曲信息 - 使用固定高度容器确保布局稳定
@@ -642,6 +663,7 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
                   // 使用固定高度容器确保布局稳定
                   Container(
                     height: 120, // 固定高度，足够容纳播放控件和进度条
+                    padding: EdgeInsets.zero, // 移除内边距简化布局
                     key: ValueKey('controls-${music.id}'),
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -752,39 +774,29 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
     );
   }
 
-  // 重新编写封面图片生成方式，保留原来的方法但进行重构
-  Widget buildCoverDisplay(BuildContext context, MusicFile music) {
-    return FutureBuilder<Widget>(
-      future: _buildCoverImageAsync(context, music),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.done && 
-            snapshot.hasData) {
-          return snapshot.data!;
-        } else {
-          // 显示加载状态
-          return Container(
-            width: 320,
-            height: 320,
-            decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Center(
-              child: CircularProgressIndicator(
-                color: Colors.white.withOpacity(0.6),
-                strokeWidth: 2.0,
-              ),
-            ),
-          );
-        }
-      },
+  Widget _buildCoverImage(BuildContext context, MusicFile music) {
+    // 使用ValueKey确保播放状态更新时不会重新创建图片组件
+    return KeyedSubtree(
+      key: ValueKey('cover-keyed-${music.id}'),
+      child: _getCachedCoverWidget(music),
     );
   }
-
-  // 重命名为异步方法
-  Future<Widget> _buildCoverImageAsync(BuildContext context, MusicFile music) async {
+  
+  // 使用缓存的封面图片组件
+  Widget _getCachedCoverWidget(MusicFile music) {
+    if (music.id == null) {
+      return _buildNoCoverImage(music, context);
+    }
+    
+    // 检查缓存中是否已有该音乐的封面组件
+    if (_coverWidgetCache.containsKey(music.id)) {
+      return _coverWidgetCache[music.id]!;
+    }
+    
+    // 构建封面组件并缓存
+    Widget coverWidget;
     if (music.coverPath != null) {
-      return ClipRRect(
+      coverWidget = ClipRRect(
         borderRadius: BorderRadius.circular(8),
         child: Hero(
           tag: 'cover-${music.id}',
@@ -818,23 +830,24 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
           ),
         ),
       );
-    } else if (music.hasEmbeddedCover) {
-      // 获取内嵌封面数据
-      List<int>? coverBytes = music.getCoverBytes();
-      
-      // 如果数据为空但标记为有内嵌封面，尝试重新加载
-      if ((coverBytes == null || coverBytes.isEmpty) && music.hasEmbeddedCover) {
-        debugPrint('尝试重新加载内嵌封面数据: ${music.title}');
-        coverBytes = await music.ensureCoverBytes();
+    } else if (music.hasEmbeddedCover && music.id != null) {
+      // 使用缓存中的图片数据
+      Uint8List? coverBytes;
+      if (_coverImageCache.containsKey(music.id!)) {
+        coverBytes = _coverImageCache[music.id!];
+      } else if (music.getCoverBytes() != null) {
+        coverBytes = Uint8List.fromList(music.getCoverBytes()!);
+        // 缓存图片数据
+        _coverImageCache[music.id!] = coverBytes;
       }
       
-      if (coverBytes != null && coverBytes.isNotEmpty) {
-        return ClipRRect(
+      if (coverBytes != null) {
+        coverWidget = ClipRRect(
           borderRadius: BorderRadius.circular(8),
           child: Hero(
             tag: 'embedded-cover-${music.id}',
             child: Image.memory(
-              Uint8List.fromList(coverBytes),
+              coverBytes,
               fit: BoxFit.cover,
               gaplessPlayback: true,
               cacheWidth: 600,
@@ -861,57 +874,54 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
               },
               errorBuilder: (context, error, stackTrace) {
                 // 添加错误处理
-                return _buildNoCoverImageSync(music, context);
+                return _buildNoCoverImage(music, context);
               },
             ),
           ),
         );
+      } else {
+        coverWidget = _buildNoCoverImage(music, context);
       }
+    } else {
+      coverWidget = _buildNoCoverImage(music, context);
     }
     
-    return _buildNoCoverImageSync(music, context);
+    _coverWidgetCache[music.id] = coverWidget;
+    return coverWidget;
   }
   
-  // 为了兼容现有代码，保留原始方法
-  Widget _buildCoverImage(BuildContext context, MusicFile music) {
-    return buildCoverDisplay(context, music);
-  }
-
-  // 同步版本的无封面图片构建
-  Widget _buildNoCoverImageSync(MusicFile music, BuildContext context) {
+  // 修改无封面图片的构建逻辑
+  Widget _buildNoCoverImage(MusicFile music, BuildContext context) {
     // 不要在build过程中调用setState！
     // 使用当前已设置的主题色，或通过其他方法更新状态
-    return Hero(
-      tag: 'no-cover-${music.id}',
-      child: Container(
-        width: 320,
-        height: 320,
-        decoration: BoxDecoration(
-          // 直接使用主题颜色作为背景
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Theme.of(context).colorScheme.primary.withOpacity(0.7),
-              Theme.of(context).colorScheme.secondary.withOpacity(0.7),
-            ],
+    return RepaintBoundary(
+      child: Hero(
+        tag: 'no-cover-${music.id}',
+        child: Container(
+          width: 320,
+          height: 320,
+          decoration: BoxDecoration(
+            // 直接使用主题颜色作为背景
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Theme.of(context).colorScheme.primary.withOpacity(0.7),
+                Theme.of(context).colorScheme.secondary.withOpacity(0.7),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(8),
           ),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Center(
-          child: Icon(
-            Icons.music_note,
-            size: 160,
-            color: Colors.white.withOpacity(0.5),
+          child: Center(
+            child: Icon(
+              Icons.music_note,
+              size: 160,
+              color: Colors.white.withOpacity(0.5),
+            ),
           ),
         ),
       ),
     );
-  }
-  
-  // 异步版本仍然保留，用于FutureBuilder
-  Future<Widget> _buildNoCoverImage(MusicFile music, BuildContext context) async {
-    return _buildNoCoverImageSync(music, context);
   }
 
   Widget _buildLyrics(
@@ -1086,6 +1096,7 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
       setState(() {
         _primaryColor = _colorCache[music.id]![0];
         _secondaryColor = _colorCache[music.id]![1];
+        _isLoadingColors = false;
       });
       debugPrint('使用本地缓存的颜色: ${music.title}');
       return;
@@ -1108,6 +1119,18 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
         if (cachedColors != null) {
           primaryColor = cachedColors[0];
           secondaryColor = cachedColors[1];
+          
+          // 缓存并立即使用这些颜色
+          _colorCache[music.id] = [primaryColor, secondaryColor];
+          
+          if (mounted) {
+            setState(() {
+              _primaryColor = primaryColor;
+              _secondaryColor = secondaryColor;
+              _isLoadingColors = false;
+            });
+          }
+          return;
         } else if (music.coverPath != null) {
           // 从文件加载图片 - 缩小尺寸以提高性能
           final imageProvider = FileImage(File(music.coverPath!));
@@ -1126,50 +1149,32 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
                           paletteGenerator.darkVibrantColor?.color ?? 
                           Colors.purple).withOpacity(0.6);
           
-        } else if (music.hasEmbeddedCover) {
-          // 获取内嵌封面数据
-          List<int>? coverBytes = music.getCoverBytes();
+        } else if (music.hasEmbeddedCover && music.getCoverBytes() != null) {
+          // 从内存数据加载图片
+          final imageProvider = MemoryImage(Uint8List.fromList(music.getCoverBytes()!));
+          final paletteGenerator = await PaletteGenerator.fromImageProvider(
+            imageProvider,
+            size: const Size(100, 100),
+            maximumColorCount: 10,
+          );
           
-          // 如果数据为空但标记为有内嵌封面，尝试重新加载
-          if ((coverBytes == null || coverBytes.isEmpty) && music.hasEmbeddedCover) {
-            debugPrint('提取颜色：尝试重新加载内嵌封面数据: ${music.title}');
-            coverBytes = await music.ensureCoverBytes();
-          }
+          primaryColor = (paletteGenerator.dominantColor?.color ?? 
+                        paletteGenerator.vibrantColor?.color ?? 
+                        Colors.blue).withOpacity(0.6);
           
-          if (coverBytes != null && coverBytes.isNotEmpty) {
-            // 从内存数据加载图片
-            final imageProvider = MemoryImage(Uint8List.fromList(coverBytes));
-            final paletteGenerator = await PaletteGenerator.fromImageProvider(
-              imageProvider,
-              size: const Size(100, 100),
-              maximumColorCount: 10,
-            );
-            
-            primaryColor = (paletteGenerator.dominantColor?.color ?? 
-                          paletteGenerator.vibrantColor?.color ?? 
-                          Colors.blue).withOpacity(0.6);
-            
-            secondaryColor = (paletteGenerator.mutedColor?.color ?? 
-                            paletteGenerator.darkVibrantColor?.color ?? 
-                            Colors.purple).withOpacity(0.6);
-            
-            debugPrint('提取颜色：成功从内嵌封面提取颜色: ${music.title}');
-          } else {
-            // 无法获取封面数据，使用默认颜色
-            debugPrint('提取颜色：无法获取内嵌封面数据，使用主题颜色: ${music.title}');
-            primaryColor = Theme.of(context).colorScheme.primary.withOpacity(0.6);
-            secondaryColor = Theme.of(context).colorScheme.secondary.withOpacity(0.6);
-          }
+          secondaryColor = (paletteGenerator.mutedColor?.color ?? 
+                          paletteGenerator.darkVibrantColor?.color ?? 
+                          Colors.purple).withOpacity(0.6);
         } else {
           // 默认渐变色 - 使用主题色
           primaryColor = Theme.of(context).colorScheme.primary.withOpacity(0.6);
           secondaryColor = Theme.of(context).colorScheme.secondary.withOpacity(0.6);
         }
         
-        // 缓存提取的颜色
+        // 缓存提取的颜色，即使组件已卸载也保存缓存
         _colorCache[music.id] = [primaryColor, secondaryColor];
         
-        // 设置渐变色
+        // 设置渐变色，只在组件仍挂载时
         if (mounted) {
           setState(() {
             _primaryColor = primaryColor;
@@ -1199,6 +1204,12 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
         if (newMusic.hasEmbeddedCover && newMusic.getCoverBytes() != null && 
             newMusic.id != null && !_coverImageCache.containsKey(newMusic.id)) {
           _coverImageCache[newMusic.id!] = Uint8List.fromList(newMusic.getCoverBytes()!);
+        }
+        
+        // 清理封面组件缓存，只保留当前歌曲的缓存，防止内存占用过大
+        if (newMusic.id != null) {
+          final keysToKeep = [newMusic.id];
+          _coverWidgetCache.removeWhere((key, _) => !keysToKeep.contains(key));
         }
         
         setState(() {

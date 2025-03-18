@@ -6,6 +6,8 @@ import 'package:path/path.dart' as path;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:convert';
+import '../utils/cache_manager.dart';
+import 'dart:math';
 
 class MusicLibraryService extends ChangeNotifier {
   static const String _musicLibraryFileName = 'music_library.json';
@@ -39,6 +41,128 @@ class MusicLibraryService extends ChangeNotifier {
   Future<String> _getMusicLibraryPath() async {
     final appDirPath = await _getAppDirectoryPath();
     return path.join(appDirPath, _musicLibraryFileName).replaceAll('\\', '/');
+  }
+  
+  // 初始化
+  Future<void> initialize() async {
+    // 初始化缓存管理器
+    await MusicCacheManager().initialize();
+    
+    // ... 原有的初始化代码 ...
+  }
+  
+  // 修改导入音乐文件的方法
+  Future<MusicFile?> importMusicFile(String filePath) async {
+    // 规范化路径
+    final normalizedPath = _normalizePath(filePath);
+    
+    // 检查文件是否存在
+    if (!File(normalizedPath).existsSync()) {
+      debugPrint('文件不存在: $normalizedPath');
+      return null;
+    }
+    
+    // 检查是否已经导入
+    final existingFile = _musicFiles.firstWhere(
+      (file) => _normalizePath(file.filePath) == normalizedPath,
+      orElse: () => MusicFile(
+        id: '',
+        filePath: '',
+        fileName: '',
+        fileExtension: '',
+        title: '',
+        artist: '',
+        album: '',
+        duration: const Duration(),
+      ),
+    );
+    
+    if (existingFile.id.isNotEmpty) {
+      debugPrint('文件已存在: $normalizedPath');
+      return existingFile;
+    }
+    
+    try {
+      // 直接使用MusicFile.fromPath静态方法创建音乐文件
+      final musicFile = await MusicFile.fromPath(normalizedPath);
+      
+      // 成功解析后添加到库中
+      _musicFiles.add(musicFile);
+      
+      debugPrint('导入成功: ${musicFile.title} - ${musicFile.artist}');
+      return musicFile;
+    } catch (e) {
+      debugPrint('导入音乐文件时发生错误: $e');
+      return null;
+    }
+  }
+  
+  // 修改重新扫描所有文件的方法
+  Future<int> rescanAllFiles() async {
+    int updatedCount = 0;
+    
+    for (int i = 0; i < _musicFiles.length; i++) {
+      final file = _musicFiles[i];
+      if (File(file.filePath).existsSync()) {
+        // 清除缓存，强制重新解析
+        await MusicCacheManager().clearCache(CacheType.metadata);
+        
+        // 重新解析文件
+        try {
+          final newFile = await MusicFile.fromPath(file.filePath);
+          // 替换列表中的文件
+          _musicFiles[i] = newFile;
+          updatedCount++;
+        } catch (e) {
+          debugPrint('重新解析文件失败: ${file.filePath}, 错误: $e');
+        }
+      }
+    }
+    
+    // 重新保存库
+    await saveLibrary();
+    
+    return updatedCount;
+  }
+  
+  // 修改保存库的方法
+  Future<void> saveLibrary() async {
+    try {
+      final libraryPath = await _getMusicLibraryPath();
+      final libraryFile = File(libraryPath);
+      
+      // 创建目录（如果不存在）
+      if (!await libraryFile.parent.exists()) {
+        await libraryFile.parent.create(recursive: true);
+      }
+      
+      // 将库转换为JSON
+      final jsonList = _musicFiles.map((file) => file.toJson()).toList();
+      final jsonString = jsonEncode(jsonList);
+      
+      // 写入文件
+      await libraryFile.writeAsString(jsonString, flush: true);
+      
+      debugPrint('音乐库已保存，共${_musicFiles.length}首歌曲');
+    } catch (e) {
+      debugPrint('保存音乐库失败: $e');
+    }
+  }
+  
+  // 清理缓存方法
+  Future<void> clearCache(CacheType type) async {
+    await MusicCacheManager().clearCache(type);
+  }
+  
+  // 获取缓存大小
+  Future<String> getCacheSize() async {
+    final size = await MusicCacheManager().getCacheSize(CacheType.all);
+    
+    if (size < 1024 * 1024) {
+      return '${(size / 1024).toStringAsFixed(2)} KB';
+    } else {
+      return '${(size / (1024 * 1024)).toStringAsFixed(2)} MB';
+    }
   }
   
   // 导入音乐文件
@@ -541,5 +665,11 @@ class MusicLibraryService extends ChangeNotifier {
     });
     
     debugPrint('音乐文件已排序');
+  }
+
+  // 生成唯一ID的方法
+  String _generateUniqueId() {
+    return DateTime.now().millisecondsSinceEpoch.toString() + 
+           Random().nextInt(10000).toString();
   }
 } 
