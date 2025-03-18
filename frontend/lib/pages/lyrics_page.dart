@@ -67,6 +67,9 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
   // 添加颜色缓存以减少重复提取
   final Map<String, List<Color>> _colorCache = {};
   
+  // 添加封面图片缓存
+  final Map<String, Uint8List> _coverImageCache = {};
+  
   @override
   bool get wantKeepAlive => true; // 保持页面状态，避免重建
   
@@ -80,13 +83,25 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
     // 初始化字体设置
     _updateFontSettings();
     
+    // 初始化页面颜色为主题色
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        setState(() {
+          _primaryColor = Theme.of(context).colorScheme.primary.withOpacity(0.6);
+          _secondaryColor = Theme.of(context).colorScheme.secondary.withOpacity(0.6);
+        });
+      }
+    });
+    
     // 获取当前播放的音乐或使用初始传入的音乐
     final audioPlayer = Provider.of<AudioPlayerService>(context, listen: false);
     _currentDisplayedMusic = widget.initialMusic ?? audioPlayer.currentMusic;
     
     if (_currentDisplayedMusic != null) {
       _loadLyrics(_currentDisplayedMusic!);
-      _extractColorsFromCover(_currentDisplayedMusic!);
+      
+      // 使用预先加载的颜色或异步加载
+      _usePreloadedColorsOrExtract(_currentDisplayedMusic!);
     }
     
     // 启动定时器，定期更新当前行和检查歌曲变化
@@ -108,7 +123,7 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
               _currentLineIndex = 0;
             });
             _loadLyrics(currentMusic);
-            _extractColorsFromCover(currentMusic);
+            _usePreloadedColorsOrExtract(currentMusic);
             debugPrint('检测到歌曲切换，正在加载新的歌词: ${currentMusic.title}');
           }
         } else if (position != _lastPosition) {
@@ -131,7 +146,7 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
                 _currentLineIndex = 0;
               });
               _loadLyrics(newMusic);
-              _extractColorsFromCover(newMusic);
+              _usePreloadedColorsOrExtract(newMusic);
               debugPrint('通过流监听检测到歌曲切换，正在加载新的歌词: ${newMusic.title}');
             }
           }
@@ -145,6 +160,8 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
     _hideControlsTimer?.cancel();
     _positionUpdateTimer?.cancel();
     _scrollController.dispose();
+    _coverImageCache.clear();
+    _colorCache.clear();
     super.dispose();
   }
 
@@ -350,6 +367,33 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
     audioPlayer.seekTo(_lyrics[index].time);
   }
 
+  // 使用预先加载的颜色或异步提取
+  void _usePreloadedColorsOrExtract(MusicFile music) {
+    if (music.id == null) return;
+    
+    final audioPlayer = Provider.of<AudioPlayerService>(context, listen: false);
+    final cachedColors = audioPlayer.getCachedColors(music.id);
+    
+    if (cachedColors != null) {
+      // 使用已缓存的颜色
+      setState(() {
+        _primaryColor = cachedColors[0];
+        _secondaryColor = cachedColors[1];
+      });
+      debugPrint('使用预先缓存的颜色: ${music.title}');
+    } else if (!music.hasEmbeddedCover && music.coverPath == null) {
+      // 无封面情况，直接使用主题色
+      setState(() {
+        _primaryColor = Theme.of(context).colorScheme.primary.withOpacity(0.6);
+        _secondaryColor = Theme.of(context).colorScheme.secondary.withOpacity(0.6);
+      });
+      debugPrint('无封面，使用主题颜色: ${music.title}');
+    } else {
+      // 有封面，异步提取颜色
+      _extractColorsFromCover(music);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context); // 需要调用父类的build方法
@@ -362,22 +406,7 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
         final isPlaying = snapshot.data == PlaybackState.playing;
         final currentMusic = audioPlayer.currentMusic;
         
-        // 检查是否需要更新当前显示的音乐
-        if (currentMusic != null && (_currentDisplayedMusic == null || currentMusic.id != _currentDisplayedMusic!.id)) {
-          // 在构建过程中检测到歌曲变化，安排一个微任务在构建后更新状态
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) {
-              setState(() {
-                _currentDisplayedMusic = currentMusic;
-              });
-              _loadLyrics(currentMusic);
-              _extractColorsFromCover(currentMusic);
-              debugPrint('在构建过程中检测到歌曲变化，加载新歌词: ${currentMusic.title}');
-            }
-          });
-        }
-        
-        // 使用当前应该显示的音乐
+        // 使用当前应该显示的音乐，避免闪烁
         final displayMusic = _currentDisplayedMusic ?? currentMusic;
         
         // 如果没有正在播放的音乐，显示占位符
@@ -391,6 +420,14 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
               ),
             ),
           );
+        }
+        
+        // 检查是否需要更新当前显示的音乐 - 使用postFrameCallback确保不在构建过程中更新状态
+        if (currentMusic != null && (_currentDisplayedMusic == null || currentMusic.id != _currentDisplayedMusic!.id)) {
+          // 安排一个微任务在构建后更新状态
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _handleMusicChange(currentMusic);
+          });
         }
         
         return Scaffold(
@@ -416,23 +453,17 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
                 if (currentMusic != null && (_currentDisplayedMusic == null || currentMusic.id != _currentDisplayedMusic!.id)) {
                   // 在Consumer中检测到歌曲变化，安排一个微任务在构建后更新状态
                   WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (mounted) {
-                      setState(() {
-                        _currentDisplayedMusic = currentMusic;
-                      });
-                      _loadLyrics(currentMusic);
-                      _extractColorsFromCover(currentMusic);
-                      debugPrint('在Consumer中检测到歌曲变化，加载新歌词: ${currentMusic.title}');
-                    }
+                    _handleMusicChange(currentMusic);
                   });
                 }
                 
                 return Stack(
                   children: [
-                    // 主内容
+                    // 主内容 - 使用固定key防止重建，并使用非动画区域展示内容
                     Row(
+                      key: displayMusic != null ? ValueKey('row-${displayMusic.id}') : null,
                       children: [
-                        // 左侧：歌曲信息 - 减少动画效果
+                        // 左侧：歌曲信息
                         SizedBox(
                           width: 400,
                           child: _buildMusicInfo(
@@ -441,7 +472,7 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
                             audioPlayer, 
                             position, 
                             duration,
-                            key: ValueKey('info-${displayMusic.id}'),
+                            key: displayMusic != null ? ValueKey('info-${displayMusic.id}') : null,
                           ),
                         ),
                         // 右侧：歌词
@@ -452,7 +483,7 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
                             child: _buildLyrics(
                               context, 
                               audioPlayer,
-                              key: ValueKey('lyrics-${displayMusic.id}'),
+                              key: displayMusic != null ? ValueKey('lyrics-${displayMusic.id}') : null,
                             ),
                           ),
                         ),
@@ -534,7 +565,7 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
                   // 上部留白
                   const SizedBox(height: 10),
                   
-                  // 封面
+                  // 封面 - 简化容器结构，减少不必要的重建
                   Container(
                     width: 320,
                     height: 320,
@@ -548,23 +579,28 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
                         ),
                       ],
                     ),
+                    // 封面图片内容 - 通过key确保在状态更新时保持稳定
                     child: _buildCoverImage(context, music),
                   ),
                   
-                  // 歌曲信息
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                  // 歌曲信息 - 使用固定高度容器确保布局稳定
+                  Container(
+                    height: 120, // 固定高度，适合显示两行标题和单行艺术家/专辑信息
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                     child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center, // 居中显示内容
                       children: [
-                        Text(
-                          music.title,
-                          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
-                          textAlign: TextAlign.center,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
+                        Flexible(
+                          child: Text(
+                            music.title,
+                            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                            textAlign: TextAlign.center,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                         const SizedBox(height: 8),
                         Text(
@@ -590,101 +626,107 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
                     ),
                   ),
                   
-                  // 控制部分 (播放控制和进度条)
-                  Column(
-                    children: [
-                      // 播放控制
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          _buildControlButton(
-                            context,
-                            icon: Icons.skip_previous,
-                            size: 32,
-                            tooltip: '上一曲',
-                            onPressed: () {
-                              audioPlayer.previous();
-                            },
-                          ),
-                          const SizedBox(width: 16),
-                          StreamBuilder<PlaybackState>(
-                            stream: audioPlayer.playbackState,
-                            initialData: PlaybackState.stopped,
-                            builder: (context, snapshot) {
-                              final isPlaying = snapshot.data == PlaybackState.playing;
-                              return _buildControlButton(
-                                context,
-                                icon: isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled,
-                                size: 48,
-                                tooltip: isPlaying ? '暂停' : '播放',
-                                onPressed: () {
-                                  audioPlayer.playOrPause();
-                                },
-                              );
-                            }
-                          ),
-                          const SizedBox(width: 16),
-                          _buildControlButton(
-                            context,
-                            icon: Icons.skip_next,
-                            size: 32,
-                            tooltip: '下一曲',
-                            onPressed: () {
-                              audioPlayer.next();
-                            },
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 20),
-                      // 进度条
-                      SizedBox(
-                        width: 320,
-                        child: Row(
+                  // 控制部分 (播放控制和进度条) - 使用ValueKey防止不必要的重建
+                  // 使用固定高度容器确保布局稳定
+                  Container(
+                    height: 120, // 固定高度，足够容纳播放控件和进度条
+                    key: ValueKey('controls-${music.id}'),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        // 播放控制
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Text(
-                              AudioPlayerService.formatDuration(position),
-                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    color: Colors.white.withOpacity(0.7),
-                                  ),
+                            _buildControlButton(
+                              context,
+                              icon: Icons.skip_previous,
+                              size: 32,
+                              tooltip: '上一曲',
+                              onPressed: () {
+                                audioPlayer.previous();
+                              },
                             ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: SliderTheme(
-                                data: SliderTheme.of(context).copyWith(
-                                  trackHeight: 2.0,
-                                  thumbShape: const RoundSliderThumbShape(
-                                    enabledThumbRadius: 4.0,
-                                    disabledThumbRadius: 4.0,
-                                  ),
-                                  overlayShape: const RoundSliderOverlayShape(
-                                    overlayRadius: 8.0,
-                                  ),
-                                  activeTrackColor: Colors.white.withOpacity(0.8),
-                                  inactiveTrackColor: Colors.white.withOpacity(0.3),
-                                  thumbColor: Colors.white,
-                                  overlayColor: Colors.white.withOpacity(0.2),
-                                ),
-                                child: Slider(
-                                  value: math.min(position.inMilliseconds.toDouble(), 
-                                          math.max(duration.inMilliseconds.toDouble(), 1.0)),
-                                  max: math.max(duration.inMilliseconds.toDouble(), 1.0),
-                                  onChanged: (value) {
-                                    audioPlayer.seekTo(Duration(milliseconds: value.toInt()));
+                            const SizedBox(width: 16),
+                            StreamBuilder<PlaybackState>(
+                              stream: audioPlayer.playbackState,
+                              initialData: PlaybackState.stopped,
+                              builder: (context, snapshot) {
+                                final isPlaying = snapshot.data == PlaybackState.playing;
+                                return _buildControlButton(
+                                  context,
+                                  icon: isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled,
+                                  size: 48,
+                                  tooltip: isPlaying ? '暂停' : '播放',
+                                  onPressed: () {
+                                    audioPlayer.playOrPause();
                                   },
-                                ),
-                              ),
+                                );
+                              }
                             ),
-                            const SizedBox(width: 8),
-                            Text(
-                              AudioPlayerService.formatDuration(duration),
-                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    color: Colors.white.withOpacity(0.7),
-                                  ),
+                            const SizedBox(width: 16),
+                            _buildControlButton(
+                              context,
+                              icon: Icons.skip_next,
+                              size: 32,
+                              tooltip: '下一曲',
+                              onPressed: () {
+                                audioPlayer.next();
+                              },
                             ),
                           ],
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 20),
+                        // 进度条
+                        SizedBox(
+                          width: 320,
+                          child: Row(
+                            children: [
+                              Text(
+                                AudioPlayerService.formatDuration(position),
+                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color: Colors.white.withOpacity(0.7),
+                                    ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: SliderTheme(
+                                  data: SliderTheme.of(context).copyWith(
+                                    trackHeight: 2.0,
+                                    thumbShape: const RoundSliderThumbShape(
+                                      enabledThumbRadius: 4.0,
+                                      disabledThumbRadius: 4.0,
+                                    ),
+                                    overlayShape: const RoundSliderOverlayShape(
+                                      overlayRadius: 8.0,
+                                    ),
+                                    activeTrackColor: Colors.white.withOpacity(0.8),
+                                    inactiveTrackColor: Colors.white.withOpacity(0.3),
+                                    thumbColor: Colors.white,
+                                    overlayColor: Colors.white.withOpacity(0.2),
+                                  ),
+                                  child: Slider(
+                                    value: math.min(position.inMilliseconds.toDouble(), 
+                                            math.max(duration.inMilliseconds.toDouble(), 1.0)),
+                                    max: math.max(duration.inMilliseconds.toDouble(), 1.0),
+                                    onChanged: (value) {
+                                      audioPlayer.seekTo(Duration(milliseconds: value.toInt()));
+                                    },
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                AudioPlayerService.formatDuration(duration),
+                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color: Colors.white.withOpacity(0.7),
+                                    ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                   
                   // 底部留白
@@ -710,45 +752,113 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
             gaplessPlayback: true,
             cacheWidth: 600,
             cacheHeight: 600,
-            key: ValueKey(music.coverPath),
+            key: ValueKey('cover-file-${music.id}'),
+            frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+              if (wasSynchronouslyLoaded || frame != null) {
+                return child;
+              }
+              return Container(
+                width: 320,
+                height: 320,
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Center(
+                  child: Icon(
+                    Icons.music_note,
+                    size: 80,
+                    color: Colors.white.withOpacity(0.6),
+                  ),
+                ),
+              );
+            },
           ),
         ),
       );
-    } else if (music.hasEmbeddedCover) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: Hero(
-          tag: 'embedded-cover-${music.id}',
-          child: Image.memory(
-            Uint8List.fromList(music.getCoverBytes()!),
-            fit: BoxFit.cover,
-            gaplessPlayback: true,
-            cacheWidth: 600,
-            cacheHeight: 600,
-            key: ValueKey(music.id),
-          ),
-        ),
-      );
-    } else {
-      return Hero(
-        tag: 'no-cover-${music.id}',
-        child: Container(
-          width: 320,
-          height: 320,
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Center(
-            child: Icon(
-              Icons.music_note,
-              size: 160,
-              color: Colors.white.withOpacity(0.6),
+    } else if (music.hasEmbeddedCover && music.id != null) {
+      // 使用缓存中的图片数据或重新获取
+      Uint8List? coverBytes;
+      if (_coverImageCache.containsKey(music.id!)) {
+        coverBytes = _coverImageCache[music.id!];
+      } else if (music.getCoverBytes() != null) {
+        coverBytes = Uint8List.fromList(music.getCoverBytes()!);
+        // 缓存图片数据
+        _coverImageCache[music.id!] = coverBytes;
+      }
+      
+      if (coverBytes != null) {
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: Hero(
+            tag: 'embedded-cover-${music.id}',
+            child: Image.memory(
+              coverBytes,
+              fit: BoxFit.cover,
+              gaplessPlayback: true,
+              cacheWidth: 600,
+              cacheHeight: 600,
+              key: ValueKey('cover-memory-${music.id}'),
+              frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+                if (wasSynchronouslyLoaded || frame != null) {
+                  return child;
+                }
+                return Container(
+                  width: 320,
+                  height: 320,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Center(
+                    child: CircularProgressIndicator(
+                      color: Colors.white.withOpacity(0.6),
+                      strokeWidth: 2.0,
+                    ),
+                  ),
+                );
+              },
+              errorBuilder: (context, error, stackTrace) {
+                // 添加错误处理
+                return _buildNoCoverImage(music, context);
+              },
             ),
           ),
-        ),
-      );
+        );
+      }
     }
+    
+    return _buildNoCoverImage(music, context);
+  }
+  
+  // 提取无封面图片的构建逻辑到单独的方法
+  Widget _buildNoCoverImage(MusicFile music, BuildContext context) {
+    return Hero(
+      tag: 'no-cover-${music.id}',
+      child: Container(
+        width: 320,
+        height: 320,
+        decoration: BoxDecoration(
+          // 直接使用主题颜色作为背景
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Theme.of(context).colorScheme.primary.withOpacity(0.7),
+              Theme.of(context).colorScheme.secondary.withOpacity(0.7),
+            ],
+          ),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Center(
+          child: Icon(
+            Icons.music_note,
+            size: 160,
+            color: Colors.white.withOpacity(0.6),
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildLyrics(
@@ -917,7 +1027,7 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
 
   // 从封面提取颜色 - 优化性能
   Future<void> _extractColorsFromCover(MusicFile music) async {
-    if (_isLoadingColors) return;
+    if (_isLoadingColors || music.id == null) return;
     
     // 检查缓存
     if (_colorCache.containsKey(music.id)) {
@@ -925,6 +1035,7 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
         _primaryColor = _colorCache[music.id]![0];
         _secondaryColor = _colorCache[music.id]![1];
       });
+      debugPrint('使用本地缓存的颜色: ${music.title}');
       return;
     }
     
@@ -938,7 +1049,14 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
         Color primaryColor;
         Color secondaryColor;
         
-        if (music.coverPath != null) {
+        // 尝试从AudioPlayerService获取预加载的颜色
+        final audioPlayer = Provider.of<AudioPlayerService>(context, listen: false);
+        final cachedColors = audioPlayer.getCachedColors(music.id);
+        
+        if (cachedColors != null) {
+          primaryColor = cachedColors[0];
+          secondaryColor = cachedColors[1];
+        } else if (music.coverPath != null) {
           // 从文件加载图片 - 缩小尺寸以提高性能
           final imageProvider = FileImage(File(music.coverPath!));
           final paletteGenerator = await PaletteGenerator.fromImageProvider(
@@ -973,7 +1091,7 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
                           paletteGenerator.darkVibrantColor?.color ?? 
                           Colors.purple).withOpacity(0.6);
         } else {
-          // 默认渐变色
+          // 默认渐变色 - 使用主题色
           primaryColor = Theme.of(context).colorScheme.primary.withOpacity(0.6);
           secondaryColor = Theme.of(context).colorScheme.secondary.withOpacity(0.6);
         }
@@ -1001,6 +1119,28 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
         }
       }
     });
+  }
+
+  // 修改歌曲变化检测和颜色加载
+  void _handleMusicChange(MusicFile newMusic) {
+    if (_currentDisplayedMusic == null || newMusic.id != _currentDisplayedMusic!.id) {
+      if (mounted) {
+        // 缓存内嵌封面数据
+        if (newMusic.hasEmbeddedCover && newMusic.getCoverBytes() != null && 
+            newMusic.id != null && !_coverImageCache.containsKey(newMusic.id)) {
+          _coverImageCache[newMusic.id!] = Uint8List.fromList(newMusic.getCoverBytes()!);
+        }
+        
+        setState(() {
+          _currentDisplayedMusic = newMusic;
+          _lyrics = []; // 清空歌词以显示加载状态
+          _currentLineIndex = 0;
+        });
+        _loadLyrics(newMusic);
+        _usePreloadedColorsOrExtract(newMusic);
+        debugPrint('检测到歌曲切换，正在加载新内容: ${newMusic.title}');
+      }
+    }
   }
 }
 

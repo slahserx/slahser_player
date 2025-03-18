@@ -1,6 +1,9 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/widgets.dart';
+import 'package:flutter/painting.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:audio_session/audio_session.dart';
 import 'package:slahser_player/models/music_file.dart';
@@ -9,6 +12,9 @@ import 'package:slahser_player/services/settings_service.dart';
 import 'package:slahser_player/services/playlist_service.dart';
 import 'package:rxdart/rxdart.dart';
 import '../enums/playback_state.dart';
+import 'dart:ui' as ui;
+import 'package:palette_generator/palette_generator.dart';
+import 'dart:io';
 
 enum RepeatMode {
   off,
@@ -96,6 +102,11 @@ class AudioPlayerService extends ChangeNotifier {
   bool _enableFadeEffect = true;
   int _fadeInDuration = 500;
   int _fadeOutDuration = 500;
+  
+  // 添加图片预加载和颜色提取缓存
+  final Map<String, ui.Image?> _imageCache = {};
+  final Map<String, List<Color>> _colorCache = {};
+  bool _isPreloadingImage = false;
   
   AudioPlayerService() {
     // 初始化音频会话
@@ -312,6 +323,9 @@ class AudioPlayerService extends ChangeNotifier {
       // 通知音乐变化监听器
       _currentMusicSubject.add(music);
       
+      // 预加载下一首歌曲的图片和颜色
+      _preloadImageAndExtractColors(music);
+      
       // 更新音频源
       debugPrint('设置音频源: ${music.filePath}');
       
@@ -371,6 +385,123 @@ class AudioPlayerService extends ChangeNotifier {
       _playbackState.add(PlaybackState.error);
       rethrow;
     }
+  }
+  
+  // 预加载图片和提取颜色
+  Future<void> _preloadImageAndExtractColors(MusicFile music) async {
+    if (_isPreloadingImage || music.id == null) return;
+    
+    _isPreloadingImage = true;
+    
+    // 在后台线程中预加载图片并提取颜色
+    Future.microtask(() async {
+      try {
+        // 预加载封面图片 - 不用precacheImage，直接加载图片数据到内存
+        if (music.coverPath != null) {
+          final file = File(music.coverPath!);
+          if (await file.exists()) {
+            try {
+              // 尝试读取文件到内存以预热缓存
+              await file.readAsBytes();
+              debugPrint('预缓存了图片文件: ${music.title}');
+            } catch (e) {
+              debugPrint('预缓存图片失败: $e');
+            }
+          }
+        } else if (music.hasEmbeddedCover && music.getCoverBytes() != null) {
+          // 嵌入式封面已经在内存中，无需额外缓存
+          debugPrint('内嵌图片已在内存中: ${music.title}');
+        }
+        
+        // 如果颜色已经提取过，则不需要再次提取
+        if (_colorCache.containsKey(music.id!)) {
+          _isPreloadingImage = false;
+          return;
+        }
+        
+        List<Color> colors = [
+          Colors.blue.withOpacity(0.6),
+          Colors.purple.withOpacity(0.6)
+        ];
+        
+        // 从封面图片中提取颜色
+        if (music.coverPath != null) {
+          final file = File(music.coverPath!);
+          if (await file.exists()) {
+            // 使用较小的图片尺寸以提高性能
+            final paletteGenerator = await PaletteGenerator.fromImageProvider(
+              FileImage(file),
+              size: const Size(100, 100),
+              maximumColorCount: 10,
+            );
+            
+            colors[0] = (paletteGenerator.dominantColor?.color ?? 
+                      paletteGenerator.vibrantColor?.color ?? 
+                      Colors.blue).withOpacity(0.6);
+            
+            colors[1] = (paletteGenerator.mutedColor?.color ?? 
+                        paletteGenerator.darkVibrantColor?.color ?? 
+                        Colors.purple).withOpacity(0.6);
+          }
+        } else if (music.hasEmbeddedCover && music.getCoverBytes() != null) {
+          // 从内嵌封面提取颜色
+          final paletteGenerator = await PaletteGenerator.fromImageProvider(
+            MemoryImage(Uint8List.fromList(music.getCoverBytes()!)),
+            size: const Size(100, 100),
+            maximumColorCount: 10,
+          );
+          
+          colors[0] = (paletteGenerator.dominantColor?.color ?? 
+                      paletteGenerator.vibrantColor?.color ?? 
+                      Colors.blue).withOpacity(0.6);
+          
+          colors[1] = (paletteGenerator.mutedColor?.color ?? 
+                      paletteGenerator.darkVibrantColor?.color ?? 
+                      Colors.purple).withOpacity(0.6);
+        }
+        
+        // 缓存提取的颜色
+        _colorCache[music.id!] = colors;
+        
+        debugPrint('预加载完成: 已提取 ${music.title} 的颜色');
+        
+        // 预加载播放列表中的下一首歌
+        _preloadNextSong(music);
+      } catch (e) {
+        debugPrint('预加载图片或提取颜色时出错: $e');
+      } finally {
+        _isPreloadingImage = false;
+      }
+    });
+  }
+  
+  // 预加载播放列表中的下一首歌
+  Future<void> _preloadNextSong(MusicFile currentMusic) async {
+    if (_playlist.isEmpty) return;
+    
+    try {
+      final currentIndex = _playlist.indexOf(currentMusic);
+      if (currentIndex == -1 || currentIndex >= _playlist.length - 1) return;
+      
+      // 获取下一首歌
+      final nextMusic = _playlist[currentIndex + 1];
+      
+      // 如果已经缓存了下一首歌的颜色，就不需要再预加载
+      if (_colorCache.containsKey(nextMusic.id!)) return;
+      
+      // 异步预加载下一首歌的图片和颜色
+      Future.delayed(const Duration(milliseconds: 500), () {
+        _preloadImageAndExtractColors(nextMusic);
+      });
+    } catch (e) {
+      debugPrint('预加载下一首歌曲失败: $e');
+    }
+  }
+  
+  // 获取缓存的颜色
+  List<Color>? getCachedColors(String? musicId) {
+    if (musicId == null) return null;
+    return _colorCache[musicId];
   }
   
   // 内部淡入方法 - 不触发UI更新
@@ -811,6 +942,10 @@ class AudioPlayerService extends ChangeNotifier {
     
     _playbackState.close();
     _currentMusicSubject.close();
+    
+    // 清理图片缓存
+    _imageCache.clear();
+    _colorCache.clear();
     
     super.dispose();
   }
