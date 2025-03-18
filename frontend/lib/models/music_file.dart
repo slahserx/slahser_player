@@ -62,8 +62,28 @@ class MusicFile {
   });
   
   // 获取封面图片数据
-  List<int>? getCoverBytes() {
-    return embeddedCoverBytes;
+  Future<List<int>?> getCoverBytes() async {
+    if (embeddedCoverBytes != null && embeddedCoverBytes!.isNotEmpty) {
+      return embeddedCoverBytes;
+    }
+    
+    // 如果embeddedCoverBytes为空但hasEmbeddedCover为true，尝试重新解析
+    if (filePath != null) {
+      try {
+        debugPrint('🔍 尝试重新解析文件获取封面: $filePath');
+        final coverBytes = await MediaParser.extractCoverImageFromFile(filePath);
+        if (coverBytes != null && coverBytes.isNotEmpty) {
+          debugPrint('✅ 成功重新提取封面: ${coverBytes.length} 字节');
+          embeddedCoverBytes = coverBytes.toList(); // 更新缓存
+          hasEmbeddedCover = true;
+          return embeddedCoverBytes;
+        }
+      } catch (e) {
+        debugPrint('⚠️ 重新提取封面失败: $e');
+      }
+    }
+    
+    return null;
   }
   
   // 获取歌词
@@ -122,6 +142,8 @@ class MusicFile {
       debugPrint('获取文件信息失败: $e');
     }
     
+    bool loadedFromCache = false;
+    
     // 首先尝试从缓存中加载元数据
     final cacheManager = MusicCacheManager();
     final cachedMetadata = await cacheManager.loadMetadataCache(filePath);
@@ -147,8 +169,13 @@ class MusicFile {
       }
       
       debugPrint('从缓存加载元数据成功: $filePath');
-    } else {
-      // 使用增强的MediaParser解析元数据
+      loadedFromCache = true;
+    }
+    
+    // 如果缓存的元数据不完整，使用MediaParser解析
+    if (!loadedFromCache || duration.inSeconds <= 0) {
+      debugPrint('需要重新解析元数据: 缓存=${loadedFromCache}, 时长=${duration.inSeconds}');
+      
       try {
         final metadata = await MediaParser.parseAudioFile(filePath);
         
@@ -165,39 +192,27 @@ class MusicFile {
           album = metadata['album'];
         }
         
-        if (metadata['duration'] != null) {
+        if (metadata['duration'] != null && (duration.inSeconds <= 0 || metadata['duration'].inSeconds > 0)) {
           duration = metadata['duration'];
         }
         
-        trackNumber = metadata['trackNumber'];
-        year = metadata['year'];
-        genre = metadata['genre'];
+        if (metadata['trackNumber'] != null) trackNumber = metadata['trackNumber'];
+        if (metadata['year'] != null) year = metadata['year'];
+        if (metadata['genre'] != null) genre = metadata['genre'];
         
         // 处理封面图片
-        if (metadata['coverBytes'] != null) {
+        if (metadata['coverBytes'] != null && metadata['coverBytes'].isNotEmpty) {
           embeddedCoverBytes = metadata['coverBytes'];
-          if (embeddedCoverBytes!.isNotEmpty) {
-            hasEmbeddedCover = true;
-            
-            // 缓存封面图片
-            await cacheManager.saveCoverCache(filePath, embeddedCoverBytes!);
-          }
-        } else if (metadata['coverPath'] != null) {
-          // 加载外部封面文件
-          try {
-            final coverFile = File(metadata['coverPath']);
-            if (await coverFile.exists()) {
-              embeddedCoverBytes = await coverFile.readAsBytes();
-              if (embeddedCoverBytes!.isNotEmpty) {
-                hasEmbeddedCover = true;
-                
-                // 缓存封面图片
-                await cacheManager.saveCoverCache(filePath, embeddedCoverBytes!);
-              }
-            }
-          } catch (e) {
-            debugPrint('加载外部封面失败: $e');
-          }
+          hasEmbeddedCover = true;
+          
+          // 缓存封面图片
+          await cacheManager.saveCoverCache(filePath, embeddedCoverBytes!);
+        }
+        
+        // 处理歌词
+        if (metadata['lyrics'] != null && metadata['lyrics'].isNotEmpty) {
+          embeddedLyrics = [metadata['lyrics']];
+          hasEmbeddedLyrics = true;
         }
         
         // 缓存元数据
@@ -213,9 +228,32 @@ class MusicFile {
         
         await cacheManager.saveMetadataCache(filePath, metadataToCache);
         
-        debugPrint('解析完成并缓存: $title - $artist, 时长: ${duration.inSeconds}秒');
+        debugPrint('解析完成并缓存: $title - $artist, 时长: ${duration.inSeconds}秒, 封面: $hasEmbeddedCover');
       } catch (e) {
         debugPrint('MediaParser解析失败: $e');
+      }
+    }
+    
+    // 特殊情况处理 - 如果标题以"-"结尾，移除它
+    if (title.endsWith(" -")) {
+      title = title.substring(0, title.length - 2).trim();
+    }
+    
+    // 确保路径是存在的文件路径
+    if (filePath.isEmpty || !await File(filePath).exists()) {
+      throw Exception('文件不存在: $filePath');
+    }
+    
+    // 如果封面为空，尝试再次提取
+    if (!hasEmbeddedCover || embeddedCoverBytes == null) {
+      final coverBytes = await MediaParser.extractCoverImageFromFile(filePath);
+      if (coverBytes != null && coverBytes.isNotEmpty) {
+        embeddedCoverBytes = coverBytes.toList();
+        hasEmbeddedCover = true;
+        
+        // 缓存封面图片
+        await cacheManager.saveCoverCache(filePath, embeddedCoverBytes);
+        debugPrint('成功提取并缓存封面: ${embeddedCoverBytes.length} 字节');
       }
     }
     
@@ -332,9 +370,9 @@ class MusicFile {
     if (fileSize != null) json['fileSize'] = fileSize;
     if (lastPlayed != null) json['lastPlayed'] = lastPlayed!.millisecondsSinceEpoch;
     
-    // 保存封面图片到JSON，限制大小为3MB
+    // 保存封面图片到JSON，限制大小为2MB
     if (embeddedCoverBytes != null && embeddedCoverBytes!.isNotEmpty) {
-      if (embeddedCoverBytes!.length <= 3 * 1024 * 1024) {
+      if (embeddedCoverBytes!.length <= 2 * 1024 * 1024) {
         json['coverBytes'] = base64Encode(embeddedCoverBytes!);
       } else {
         debugPrint('封面图片太大 (${embeddedCoverBytes!.length}字节)，不保存到JSON中');

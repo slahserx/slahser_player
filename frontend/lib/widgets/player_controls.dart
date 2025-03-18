@@ -129,8 +129,72 @@ class _VolumeSliderPainter extends CustomPainter {
   }
 }
 
-class PlayerControls extends StatelessWidget {
+class PlayerControls extends StatefulWidget {
   const PlayerControls({super.key});
+
+  @override
+  _PlayerControlsState createState() => _PlayerControlsState();
+}
+
+class _PlayerControlsState extends State<PlayerControls> with SingleTickerProviderStateMixin {
+  // 播放进度
+  double _currentPosition = 0.0;
+  double _totalDuration = 0.0;
+  bool _isDragging = false;
+  String _formattedCurrentTime = "00:00";
+  String _formattedTotalTime = "00:00";
+  
+  // 音量控制
+  double _currentVolume = 1.0;
+  bool _isVolumeDragging = false;
+  
+  // 显示歌词的弹出菜单
+  OverlayEntry? _lyricsOverlay;
+  late AnimationController _controller;
+  
+  // 缓存封面图片数据
+  final Map<String, Uint8List> _coverImageCache = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    );
+  }
+  
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _precacheCurrentMusicCover();
+  }
+  
+  // 预加载当前播放音乐的封面
+  void _precacheCurrentMusicCover() {
+    final audioPlayer = Provider.of<AudioPlayerService>(context, listen: false);
+    final currentMusic = audioPlayer.currentMusic;
+    
+    if (currentMusic != null && currentMusic.hasEmbeddedCover && !_coverImageCache.containsKey(currentMusic.id)) {
+      // 异步预加载封面
+      currentMusic.getCoverBytes().then((coverBytes) {
+        if (coverBytes != null && coverBytes.isNotEmpty && mounted) {
+          setState(() {
+            _coverImageCache[currentMusic.id] = Uint8List.fromList(coverBytes);
+          });
+        }
+      }).catchError((error) {
+        debugPrint('预加载封面图片出错: $error');
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _lyricsOverlay?.remove();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -184,44 +248,19 @@ class PlayerControls extends StatelessWidget {
                                         color: Theme.of(context).colorScheme.surfaceVariant,
                                         borderRadius: BorderRadius.circular(4),
                                       ),
-                                      child: currentMusic?.coverPath != null
-                                          ? ClipRRect(
-                                              borderRadius: BorderRadius.circular(4),
-                                              child: Hero(
-                                                tag: 'cover-${currentMusic!.id}',
-                                                child: Image.file(
-                                                  File(currentMusic!.coverPath!),
-                                                  fit: BoxFit.cover,
-                                                  cacheWidth: 200,
-                                                  cacheHeight: 200,
-                                                  gaplessPlayback: true,
-                                                ),
-                                              ),
-                                            )
-                                          : currentMusic?.hasEmbeddedCover == true && currentMusic?.embeddedCoverBytes != null
-                                              ? ClipRRect(
-                                                  borderRadius: BorderRadius.circular(4),
-                                                  child: Hero(
-                                                    tag: 'embedded-cover-${currentMusic?.id ?? "unknown"}',
-                                                    child: currentMusic != null
-                                                        ? Image.memory(
-                                                            Uint8List.fromList(currentMusic.getCoverBytes()!),
-                                                            fit: BoxFit.cover,
-                                                            cacheWidth: 200,
-                                                            cacheHeight: 200,
-                                                            gaplessPlayback: true,
-                                                          )
-                                                        : const SizedBox.shrink(),
-                                                  ),
-                                                )
-                                              : Hero(
-                                                  tag: 'no-cover-${currentMusic?.id ?? "none"}',
-                                                  child: Icon(
-                                                    Icons.music_note,
-                                                    size: 24,
-                                                    color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
-                                                  ),
-                                                ),
+                                      child: ClipRRect(
+                                        borderRadius: BorderRadius.circular(4),
+                                        child: Hero(
+                                          tag: currentMusic != null 
+                                              ? (currentMusic.coverPath != null 
+                                                  ? 'cover-${currentMusic.id}' 
+                                                  : 'embedded-cover-${currentMusic.id}')
+                                              : 'no-cover',
+                                          child: RepaintBoundary(
+                                            child: _buildCoverImage(currentMusic),
+                                          ),
+                                        ),
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -622,6 +661,139 @@ class PlayerControls extends StatelessWidget {
     showDialog(
       context: context,
       builder: (context) => const EqualizerDialog(),
+    );
+  }
+
+  // 构建封面图片内容
+  Widget _buildCoverImage(MusicFile? music) {
+    if (music == null) {
+      return Container(
+        alignment: Alignment.center,
+        child: const Icon(
+          Icons.music_note,
+          size: 30,
+          color: Colors.white54,
+        ),
+      );
+    }
+    
+    // 如果有文件路径封面
+    if (music.coverPath != null) {
+      return Image.file(
+        File(music.coverPath!),
+        fit: BoxFit.cover,
+        cacheWidth: 200,
+        cacheHeight: 200,
+        gaplessPlayback: true,
+        frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+          if (wasSynchronouslyLoaded || frame != null) {
+            return child;
+          }
+          return AnimatedOpacity(
+            opacity: frame == null ? 0 : 1,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOut,
+            child: child,
+          );
+        },
+      );
+    }
+    
+    // 如果有嵌入式封面并且已缓存
+    if (music.hasEmbeddedCover && _coverImageCache.containsKey(music.id)) {
+      return Image.memory(
+        _coverImageCache[music.id]!,
+        fit: BoxFit.cover,
+        cacheWidth: 200,
+        cacheHeight: 200,
+        gaplessPlayback: true,
+        frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+          if (wasSynchronouslyLoaded || frame != null) {
+            return child;
+          }
+          return AnimatedOpacity(
+            opacity: frame == null ? 0 : 1,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOut,
+            child: child,
+          );
+        },
+      );
+    }
+    
+    // 如果有嵌入式封面但未缓存
+    if (music.hasEmbeddedCover) {
+      return FutureBuilder<List<int>?>(
+        future: music.getCoverBytes(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                ),
+              ),
+            );
+          }
+          
+          if (snapshot.hasData && snapshot.data != null) {
+            final imageData = Uint8List.fromList(snapshot.data!);
+            
+            // 缓存图片数据
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted && !_coverImageCache.containsKey(music.id)) {
+                setState(() {
+                  _coverImageCache[music.id] = imageData;
+                });
+              }
+            });
+            
+            return AnimatedOpacity(
+              opacity: 1.0,
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOut,
+              child: Image.memory(
+                imageData,
+                fit: BoxFit.cover,
+                cacheWidth: 200,
+                cacheHeight: 200,
+                gaplessPlayback: true,
+                frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+                  if (wasSynchronouslyLoaded || frame != null) {
+                    return child;
+                  }
+                  return AnimatedOpacity(
+                    opacity: 0.0,
+                    duration: const Duration(milliseconds: 300),
+                    child: child,
+                  );
+                },
+              ),
+            );
+          }
+          
+          return Container(
+            alignment: Alignment.center,
+            child: const Icon(
+              Icons.music_note,
+              size: 30,
+              color: Colors.white54,
+            ),
+          );
+        },
+      );
+    }
+    
+    // 默认显示图标
+    return Container(
+      alignment: Alignment.center,
+      child: const Icon(
+        Icons.music_note,
+        size: 30,
+        color: Colors.white54,
+      ),
     );
   }
 } 

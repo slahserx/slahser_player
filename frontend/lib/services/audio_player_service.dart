@@ -393,10 +393,9 @@ class AudioPlayerService extends ChangeNotifier {
     
     _isPreloadingImage = true;
     
-    // 在后台线程中预加载图片并提取颜色
     Future.microtask(() async {
       try {
-        // 预加载封面图片 - 不用precacheImage，直接加载图片数据到内存
+        // 检查封面路径
         if (music.coverPath != null) {
           final file = File(music.coverPath!);
           if (await file.exists()) {
@@ -408,9 +407,19 @@ class AudioPlayerService extends ChangeNotifier {
               debugPrint('预缓存图片失败: $e');
             }
           }
-        } else if (music.hasEmbeddedCover && music.getCoverBytes() != null) {
-          // 嵌入式封面已经在内存中，无需额外缓存
-          debugPrint('内嵌图片已在内存中: ${music.title}');
+        }
+        // 确保嵌入式封面可用
+        else if (music.hasEmbeddedCover) {
+          try {
+            final coverBytes = await music.getCoverBytes();
+            if (coverBytes != null && coverBytes.isNotEmpty) {
+              debugPrint('内嵌图片已在内存中: ${music.title}，大小: ${coverBytes.length} 字节');
+            } else {
+              debugPrint('⚠️ 内嵌图片标记为存在但获取失败: ${music.title}');
+            }
+          } catch (e) {
+            debugPrint('⚠️ 获取内嵌图片时出错: $e');
+          }
         }
         
         // 如果颜色已经提取过，则不需要再次提取
@@ -424,40 +433,67 @@ class AudioPlayerService extends ChangeNotifier {
           Colors.purple.withOpacity(0.6)
         ];
         
+        bool extractedColors = false;
+        
         // 从封面图片中提取颜色
         if (music.coverPath != null) {
           final file = File(music.coverPath!);
           if (await file.exists()) {
-            // 使用较小的图片尺寸以提高性能
-            final paletteGenerator = await PaletteGenerator.fromImageProvider(
-              FileImage(file),
-              size: const Size(100, 100),
-              maximumColorCount: 10,
-            );
-            
-            colors[0] = (paletteGenerator.dominantColor?.color ?? 
-                      paletteGenerator.vibrantColor?.color ?? 
-                      Colors.blue).withOpacity(0.6);
-            
-            colors[1] = (paletteGenerator.mutedColor?.color ?? 
-                        paletteGenerator.darkVibrantColor?.color ?? 
-                        Colors.purple).withOpacity(0.6);
+            try {
+              // 使用较小的图片尺寸以提高性能
+              final paletteGenerator = await PaletteGenerator.fromImageProvider(
+                FileImage(file),
+                size: const Size(100, 100),
+                maximumColorCount: 10,
+              );
+              
+              colors[0] = (paletteGenerator.dominantColor?.color ?? 
+                        paletteGenerator.vibrantColor?.color ?? 
+                        Colors.blue).withOpacity(0.6);
+              
+              colors[1] = (paletteGenerator.mutedColor?.color ?? 
+                          paletteGenerator.darkVibrantColor?.color ?? 
+                          Colors.purple).withOpacity(0.6);
+              
+              extractedColors = true;
+              debugPrint('✅ 从文件提取了颜色: ${music.title}');
+            } catch (e) {
+              debugPrint('⚠️ 从文件提取颜色失败: $e');
+            }
           }
-        } else if (music.hasEmbeddedCover && music.getCoverBytes() != null) {
-          // 从内嵌封面提取颜色
-          final paletteGenerator = await PaletteGenerator.fromImageProvider(
-            MemoryImage(Uint8List.fromList(music.getCoverBytes()!)),
-            size: const Size(100, 100),
-            maximumColorCount: 10,
-          );
-          
-          colors[0] = (paletteGenerator.dominantColor?.color ?? 
-                      paletteGenerator.vibrantColor?.color ?? 
-                      Colors.blue).withOpacity(0.6);
-          
-          colors[1] = (paletteGenerator.mutedColor?.color ?? 
-                      paletteGenerator.darkVibrantColor?.color ?? 
-                      Colors.purple).withOpacity(0.6);
+        }
+        
+        // 尝试从嵌入式封面提取颜色
+        if (!extractedColors && music.hasEmbeddedCover) {
+          try {
+            final coverBytes = await music.getCoverBytes();
+            if (coverBytes != null && coverBytes.isNotEmpty) {
+              try {
+                final paletteGenerator = await PaletteGenerator.fromImageProvider(
+                  MemoryImage(Uint8List.fromList(coverBytes)),
+                  size: const Size(100, 100),
+                  maximumColorCount: 10,
+                );
+                
+                colors[0] = (paletteGenerator.dominantColor?.color ?? 
+                          paletteGenerator.vibrantColor?.color ?? 
+                          Colors.blue).withOpacity(0.6);
+                
+                colors[1] = (paletteGenerator.mutedColor?.color ?? 
+                          paletteGenerator.darkVibrantColor?.color ?? 
+                          Colors.purple).withOpacity(0.6);
+                
+                extractedColors = true;
+                debugPrint('✅ 从内嵌图片提取了颜色: ${music.title}，图片大小: ${coverBytes.length}字节');
+              } catch (e) {
+                debugPrint('⚠️ 从内嵌图片提取颜色失败: $e');
+              }
+            } else {
+              debugPrint('⚠️ 无法获取内嵌图片数据: ${music.title}');
+            }
+          } catch (e) {
+            debugPrint('⚠️ 获取内嵌图片时出错: $e');
+          }
         }
         
         // 缓存提取的颜色

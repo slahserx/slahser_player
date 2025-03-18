@@ -613,7 +613,7 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
                       ],
                     ),
                     // 封面图片内容 - 通过key确保在状态更新时保持稳定
-                    child: _buildCoverImage(context, music),
+                    child: _buildCover(music),
                   ),
                   
                   // 歌曲信息 - 使用固定高度容器确保布局稳定
@@ -774,113 +774,52 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
     );
   }
 
-  Widget _buildCoverImage(BuildContext context, MusicFile music) {
-    // 使用ValueKey确保播放状态更新时不会重新创建图片组件
-    return KeyedSubtree(
-      key: ValueKey('cover-keyed-${music.id}'),
-      child: _getCachedCoverWidget(music),
-    );
-  }
-  
-  // 使用缓存的封面图片组件
-  Widget _getCachedCoverWidget(MusicFile music) {
-    if (music.id == null) {
-      return _buildNoCoverImage(music, context);
-    }
-    
-    // 检查缓存中是否已有该音乐的封面组件
+  Widget _buildCover(MusicFile music) {
+    // 使用缓存的封面组件如果存在的话
     if (_coverWidgetCache.containsKey(music.id)) {
       return _coverWidgetCache[music.id]!;
     }
     
-    // 构建封面组件并缓存
+    // 否则构建新的封面组件
     Widget coverWidget;
+    
     if (music.coverPath != null) {
+      // 使用文件路径加载图片
       coverWidget = ClipRRect(
         borderRadius: BorderRadius.circular(8),
         child: Hero(
-          tag: 'cover-${music.id}',
+          tag: 'file-cover-${music.id}',
           child: Image.file(
             File(music.coverPath!),
             fit: BoxFit.cover,
             gaplessPlayback: true,
-            cacheWidth: 600,
-            cacheHeight: 600,
-            key: ValueKey('cover-file-${music.id}'),
-            frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
-              if (wasSynchronouslyLoaded || frame != null) {
-                return child;
-              }
-              return Container(
-                width: 320,
-                height: 320,
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Center(
-                  child: Icon(
-                    Icons.music_note,
-                    size: 80,
-                    color: Colors.white.withOpacity(0.6),
-                  ),
-                ),
-              );
-            },
           ),
         ),
       );
     } else if (music.hasEmbeddedCover && music.id != null) {
-      // 使用缓存中的图片数据
-      Uint8List? coverBytes;
+      // 使用缓存中的图片数据或异步加载
       if (_coverImageCache.containsKey(music.id!)) {
-        coverBytes = _coverImageCache[music.id!];
-      } else if (music.getCoverBytes() != null) {
-        coverBytes = Uint8List.fromList(music.getCoverBytes()!);
-        // 缓存图片数据
-        _coverImageCache[music.id!] = coverBytes;
-      }
-      
-      if (coverBytes != null) {
-        coverWidget = ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: Hero(
-            tag: 'embedded-cover-${music.id}',
-            child: Image.memory(
-              coverBytes,
-              fit: BoxFit.cover,
-              gaplessPlayback: true,
-              cacheWidth: 600,
-              cacheHeight: 600,
-              key: ValueKey('cover-memory-${music.id}'),
-              frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
-                if (wasSynchronouslyLoaded || frame != null) {
-                  return child;
-                }
-                return Container(
-                  width: 320,
-                  height: 320,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Center(
-                    child: CircularProgressIndicator(
-                      color: Colors.white.withOpacity(0.6),
-                      strokeWidth: 2.0,
-                    ),
-                  ),
-                );
-              },
-              errorBuilder: (context, error, stackTrace) {
-                // 添加错误处理
-                return _buildNoCoverImage(music, context);
-              },
-            ),
-          ),
-        );
+        final cachedBytes = _coverImageCache[music.id!];
+        coverWidget = _buildCoverWidgetFromBytes(music, cachedBytes);
       } else {
-        coverWidget = _buildNoCoverImage(music, context);
+        // 使用FutureBuilder加载图片数据
+        coverWidget = FutureBuilder<List<int>?>(
+          future: music.getCoverBytes(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return _buildLoadingWidget();
+            }
+            
+            if (snapshot.hasData && snapshot.data != null) {
+              final coverBytes = Uint8List.fromList(snapshot.data!);
+              // 缓存图片数据
+              _coverImageCache[music.id!] = coverBytes;
+              return _buildCoverWidgetFromBytes(music, coverBytes);
+            } else {
+              return _buildNoCoverImage(music, context);
+            }
+          }
+        );
       }
     } else {
       coverWidget = _buildNoCoverImage(music, context);
@@ -889,36 +828,63 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
     _coverWidgetCache[music.id] = coverWidget;
     return coverWidget;
   }
-  
-  // 修改无封面图片的构建逻辑
-  Widget _buildNoCoverImage(MusicFile music, BuildContext context) {
-    // 不要在build过程中调用setState！
-    // 使用当前已设置的主题色，或通过其他方法更新状态
-    return RepaintBoundary(
+
+  Widget _buildCoverWidgetFromBytes(MusicFile music, List<int>? bytes) {
+    if (bytes == null || bytes.isEmpty) {
+      return _buildNoCoverImage(music, context);
+    }
+    
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
       child: Hero(
-        tag: 'no-cover-${music.id}',
-        child: Container(
-          width: 320,
-          height: 320,
-          decoration: BoxDecoration(
-            // 直接使用主题颜色作为背景
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                Theme.of(context).colorScheme.primary.withOpacity(0.7),
-                Theme.of(context).colorScheme.secondary.withOpacity(0.7),
-              ],
-            ),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Center(
-            child: Icon(
-              Icons.music_note,
-              size: 160,
-              color: Colors.white.withOpacity(0.5),
-            ),
-          ),
+        tag: 'embedded-cover-${music.id}',
+        child: Image.memory(
+          Uint8List.fromList(bytes),
+          fit: BoxFit.cover,
+          gaplessPlayback: true,
+          cacheWidth: 600,
+          cacheHeight: 600,
+          key: ValueKey('cover-memory-${music.id}'),
+          frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+            if (wasSynchronouslyLoaded || frame != null) {
+              return child;
+            }
+            return Container(
+              width: 320,
+              height: 320,
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Center(
+                child: CircularProgressIndicator(
+                  color: Colors.white.withOpacity(0.6),
+                  strokeWidth: 2.0,
+                ),
+              ),
+            );
+          },
+          errorBuilder: (context, error, stackTrace) {
+            // 添加错误处理
+            return _buildNoCoverImage(music, context);
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLoadingWidget() {
+    return Container(
+      width: 320,
+      height: 320,
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Center(
+        child: CircularProgressIndicator(
+          color: Colors.white.withOpacity(0.6),
+          strokeWidth: 2.0,
         ),
       ),
     );
@@ -1149,22 +1115,29 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
                           paletteGenerator.darkVibrantColor?.color ?? 
                           Colors.purple).withOpacity(0.6);
           
-        } else if (music.hasEmbeddedCover && music.getCoverBytes() != null) {
+        } else if (music.hasEmbeddedCover) {
           // 从内存数据加载图片
-          final imageProvider = MemoryImage(Uint8List.fromList(music.getCoverBytes()!));
-          final paletteGenerator = await PaletteGenerator.fromImageProvider(
-            imageProvider,
-            size: const Size(100, 100),
-            maximumColorCount: 10,
-          );
-          
-          primaryColor = (paletteGenerator.dominantColor?.color ?? 
-                        paletteGenerator.vibrantColor?.color ?? 
-                        Colors.blue).withOpacity(0.6);
-          
-          secondaryColor = (paletteGenerator.mutedColor?.color ?? 
-                          paletteGenerator.darkVibrantColor?.color ?? 
-                          Colors.purple).withOpacity(0.6);
+          final coverBytes = await music.getCoverBytes();
+          if (coverBytes != null && coverBytes.isNotEmpty) {
+            final imageProvider = MemoryImage(Uint8List.fromList(coverBytes));
+            final paletteGenerator = await PaletteGenerator.fromImageProvider(
+              imageProvider,
+              size: const Size(100, 100),
+              maximumColorCount: 10,
+            );
+            
+            primaryColor = (paletteGenerator.dominantColor?.color ?? 
+                          paletteGenerator.vibrantColor?.color ?? 
+                          Colors.blue).withOpacity(0.6);
+            
+            secondaryColor = (paletteGenerator.mutedColor?.color ?? 
+                            paletteGenerator.darkVibrantColor?.color ?? 
+                            Colors.purple).withOpacity(0.6);
+          } else {
+            // 无法获取封面数据，使用默认颜色
+            primaryColor = Theme.of(context).colorScheme.primary.withOpacity(0.6);
+            secondaryColor = Theme.of(context).colorScheme.secondary.withOpacity(0.6);
+          }
         } else {
           // 默认渐变色 - 使用主题色
           primaryColor = Theme.of(context).colorScheme.primary.withOpacity(0.6);
@@ -1197,13 +1170,19 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
   }
 
   // 修改歌曲变化检测和颜色加载
-  void _handleMusicChange(MusicFile newMusic) {
+  void _handleMusicChange(MusicFile newMusic) async {
     if (_currentDisplayedMusic == null || newMusic.id != _currentDisplayedMusic!.id) {
       if (mounted) {
         // 缓存内嵌封面数据
-        if (newMusic.hasEmbeddedCover && newMusic.getCoverBytes() != null && 
-            newMusic.id != null && !_coverImageCache.containsKey(newMusic.id)) {
-          _coverImageCache[newMusic.id!] = Uint8List.fromList(newMusic.getCoverBytes()!);
+        if (newMusic.hasEmbeddedCover && newMusic.id != null && !_coverImageCache.containsKey(newMusic.id)) {
+          try {
+            final coverBytes = await newMusic.getCoverBytes();
+            if (coverBytes != null && coverBytes.isNotEmpty) {
+              _coverImageCache[newMusic.id!] = Uint8List.fromList(coverBytes);
+            }
+          } catch (e) {
+            debugPrint('加载封面数据错误: $e');
+          }
         }
         
         // 清理封面组件缓存，只保留当前歌曲的缓存，防止内存占用过大
@@ -1229,6 +1208,37 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
         debugPrint('检测到歌曲切换，正在加载新内容: ${newMusic.title}');
       }
     }
+  }
+
+  // 添加没有封面时的默认图片构建方法
+  Widget _buildNoCoverImage(MusicFile music, BuildContext context) {
+    return RepaintBoundary(
+      child: Hero(
+        tag: 'no-cover-${music.id}',
+        child: Container(
+          width: 320,
+          height: 320,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Theme.of(context).colorScheme.primary.withOpacity(0.7),
+                Theme.of(context).colorScheme.secondary.withOpacity(0.7),
+              ],
+            ),
+          ),
+          child: Center(
+            child: Icon(
+              Icons.music_note,
+              size: 120,
+              color: Colors.white.withOpacity(0.6),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 
