@@ -1,12 +1,14 @@
 import 'dart:io';
 import 'dart:typed_data';
 import 'dart:convert';
+import 'dart:math';
 import 'package:path/path.dart' as path;
 import 'package:uuid/uuid.dart';
 import 'package:flutter_media_metadata/flutter_media_metadata.dart';
 import 'package:flutter/foundation.dart';
 import 'package:gbk_codec/gbk_codec.dart';
 import 'package:slahser_player/services/file_service.dart';
+import 'package:crypto/crypto.dart';
 
 class MusicFile {
   final String id;
@@ -63,6 +65,10 @@ class MusicFile {
     final fileName = path.basename(filePath);
     final fileExtension = path.extension(filePath).toLowerCase().replaceFirst('.', '');
     
+    // 生成唯一ID，使用文件路径的哈希值
+    final String id = _generateMusicFileId(filePath);
+    debugPrint('为音乐文件生成ID: $id, 路径: $filePath');
+    
     // 默认值
     String title = path.basenameWithoutExtension(filePath);
     String artist = '未知艺术家';
@@ -83,6 +89,7 @@ class MusicFile {
       final fileStat = await file.stat();
       lastModified = fileStat.modified;
       fileSize = fileStat.size;
+      debugPrint('文件尺寸: $fileSize 字节');
     } catch (e) {
       debugPrint('获取文件信息失败: $e');
     }
@@ -102,9 +109,109 @@ class MusicFile {
         year = metadata['year'] as String?;
         genre = metadata['genre'] as String?;
         
+        if (embeddedCoverBytes != null && embeddedCoverBytes.isNotEmpty) {
+          hasEmbeddedCover = true;
+          debugPrint('MP3文件包含内嵌封面: ${embeddedCoverBytes.length} 字节');
+        }
+        
         if (embeddedLyrics != null && embeddedLyrics.isNotEmpty) {
           hasEmbeddedLyrics = true;
-          debugPrint('MP3文件包含内嵌歌词');
+          debugPrint('MP3文件包含内嵌歌词: ${embeddedLyrics.length} 行');
+        }
+      } else if (fileExtension == 'flac') {
+        // 使用专用方法解析FLAC元数据
+        final metadata = await _readFLACMetadata(filePath);
+        
+        // 使用解析结果
+        if (metadata['title'] != null && metadata['title'].isNotEmpty) {
+          title = metadata['title'];
+        }
+        
+        if (metadata['artist'] != null && metadata['artist'].isNotEmpty) {
+          artist = metadata['artist'];
+        }
+        
+        if (metadata['album'] != null && metadata['album'].isNotEmpty) {
+          album = metadata['album'];
+        }
+        
+        duration = metadata['duration'] ?? duration;
+        embeddedCoverBytes = metadata['coverBytes'] as List<int>?;
+        embeddedLyrics = metadata['lyrics'] as List<String>?;
+        hasEmbeddedCover = metadata['hasEmbeddedCover'] ?? false;
+        hasEmbeddedLyrics = metadata['hasEmbeddedLyrics'] ?? false;
+        
+      } else if (['ogg', 'wav', 'm4a', 'aac', 'wma'].contains(fileExtension)) {
+        // 针对其他格式的增强元数据读取
+        try {
+          debugPrint('正在解析多媒体文件元数据: $filePath');
+          final standardMetadata = await MetadataRetriever.fromFile(File(filePath));
+          
+          debugPrint('文件元数据处理: $fileName, 原始标题=${standardMetadata.trackName}, 艺术家=${standardMetadata.trackArtistNames}, 专辑=${standardMetadata.albumName}');
+          
+          // 基本元数据读取
+          if (standardMetadata.trackName != null && standardMetadata.trackName!.isNotEmpty) {
+            title = standardMetadata.trackName!;
+          }
+          
+          if (standardMetadata.trackArtistNames != null && standardMetadata.trackArtistNames!.isNotEmpty) {
+            artist = standardMetadata.trackArtistNames!.join(', ');
+          }
+          
+          if (standardMetadata.albumName != null && standardMetadata.albumName!.isNotEmpty) {
+            album = standardMetadata.albumName!;
+          }
+          
+          duration = Duration(milliseconds: standardMetadata.trackDuration ?? 0);
+          embeddedCoverBytes = standardMetadata.albumArt;
+          
+          // 如果获取元数据为空，尝试使用文件名解析
+          if (title.isEmpty && artist == '未知艺术家') {
+            debugPrint('元数据为空，尝试从文件名解析: $fileName');
+            // 尝试从文件名解析艺术家和标题 (格式: 艺术家 - 标题.扩展名)
+            final nameWithoutExt = path.basenameWithoutExtension(filePath);
+            if (nameWithoutExt.contains('-')) {
+              final parts = nameWithoutExt.split('-');
+              if (parts.length >= 2) {
+                // 设置默认值
+                if (artist == '未知艺术家') {
+                  artist = parts[0].trim();
+                }
+                if (title.isEmpty) {
+                  title = parts.skip(1).join('-').trim();
+                }
+                debugPrint('已从文件名解析: 艺术家=$artist, 标题=$title');
+              }
+            }
+          }
+          
+          // 尝试获取额外的元数据
+          if (standardMetadata.trackNumber != null) {
+            trackNumber = int.tryParse(standardMetadata.trackNumber.toString());
+          }
+          
+          if (standardMetadata.year != null) {
+            year = standardMetadata.year.toString();
+          }
+          
+          genre = standardMetadata.genre;
+          
+          if (embeddedCoverBytes != null && embeddedCoverBytes.isNotEmpty) {
+            hasEmbeddedCover = true;
+            debugPrint('${fileExtension.toUpperCase()}文件包含内嵌封面: ${embeddedCoverBytes.length} 字节');
+          }
+        } catch (e) {
+          debugPrint('解析多媒体文件元数据失败: $e');
+          // 出错时尝试从文件名解析
+          final nameWithoutExt = path.basenameWithoutExtension(filePath);
+          if (nameWithoutExt.contains('-')) {
+            final parts = nameWithoutExt.split('-');
+            if (parts.length >= 2) {
+              artist = parts[0].trim();
+              title = parts.skip(1).join('-').trim();
+              debugPrint('元数据解析失败，已从文件名提取: 艺术家=$artist, 标题=$title');
+            }
+          }
         }
       } else {
         // 使用标准元数据读取
@@ -114,6 +221,11 @@ class MusicFile {
         album = metadata.albumName ?? album;
         duration = Duration(milliseconds: metadata.trackDuration ?? 0);
         embeddedCoverBytes = metadata.albumArt;
+        
+        if (embeddedCoverBytes != null && embeddedCoverBytes.isNotEmpty) {
+          hasEmbeddedCover = true;
+          debugPrint('媒体文件包含内嵌封面: ${embeddedCoverBytes.length} 字节');
+        }
         
         // 尝试获取曲目编号
         if (metadata.trackNumber != null) {
@@ -127,9 +239,6 @@ class MusicFile {
         
         // 尝试获取流派
         genre = metadata.genre;
-        
-        // 注意: flutter_media_metadata包的Metadata类不支持直接获取歌词
-        // 将通过其他方式尝试获取歌词内容
       }
     } catch (e) {
       debugPrint('读取元数据失败：$e');
@@ -140,62 +249,98 @@ class MusicFile {
     Map<String, String> fileNameInfo = _extractInfoFromFileName(fileNameWithoutExt);
     
     // 初始信息不完整时，尝试从文件名推断
-    if (title == fileNameWithoutExt || title.isEmpty) {
-      title = fileNameInfo['title'] ?? fileNameWithoutExt;
-      debugPrint('从文件名提取标题: $title');
+    if (title == fileNameWithoutExt && fileNameInfo.containsKey('title')) {
+      title = fileNameInfo['title']!;
     }
     
-    if (artist == '未知艺术家' || artist.isEmpty) {
-      artist = fileNameInfo['artist'] ?? '未知艺术家';
-      debugPrint('从文件名提取艺术家: $artist');
+    if (artist == '未知艺术家' && fileNameInfo.containsKey('artist')) {
+      artist = fileNameInfo['artist']!;
     }
     
-    debugPrint('最终元数据: 标题="$title", 艺术家="$artist", 专辑="$album", 时长=${duration.inSeconds}秒');
+    // 寻找外部封面图片
+    String? coverPath;
+    try {
+      // 首先尝试异步方法找封面
+      coverPath = await findCoverImageAsync(filePath);
+      
+      // 记录找到封面的情况
+      if (coverPath != null) {
+        debugPrint('找到外部封面图片: $coverPath');
+      }
+    } catch (e) {
+      debugPrint('查找封面图片失败: $e');
+    }
     
-    // 查找歌词文件
+    // 寻找匹配的歌词文件
     String? lyricsFilePath;
     try {
+      // 避免使用test.txt等测试文件作为歌词
+      const List<String> validLrcExtensions = ['.lrc', '.txt'];
+      
+      // 首先查找同名的LRC或TXT文件
       final lyricsPath = '${filePath.substring(0, filePath.lastIndexOf('.'))}';
       
-      // 更全面的歌词文件扩展名检查
-      for (final ext in FileService.supportedLyricFormats.map((e) => '.$e')) {
+      for (final ext in validLrcExtensions) {
         final lrcFilePath = '$lyricsPath$ext';
-        if (await File(lrcFilePath).exists()) {
-          debugPrint('找到歌词文件: $lrcFilePath');
+        final lrcFile = File(lrcFilePath);
+        
+        if (await lrcFile.exists()) {
+          // 对于txt文件，验证内容是否像歌词
+          if (ext.toLowerCase() == '.txt') {
+            final content = await lrcFile.readAsString();
+            final sampleLines = content.split('\n').take(5).toList();
+            
+            // 检查是否包含类似时间标签的内容 [mm:ss.xx]
+            final hasTimeTag = sampleLines.any((line) => 
+                RegExp(r'\[\d{2}:\d{2}\.\d{2}\]').hasMatch(line));
+            
+            // 如果不包含时间标签但文件名包含"test"，跳过这个文件
+            if (!hasTimeTag && lrcFilePath.toLowerCase().contains('test')) {
+              debugPrint('跳过可能的测试文件: $lrcFilePath');
+              continue;
+            }
+          }
+          
           lyricsFilePath = lrcFilePath;
+          debugPrint('找到匹配的歌词文件: $lyricsFilePath');
           break;
         }
       }
       
-      // 如果在同名文件中找不到，尝试在目录中查找与歌曲标题匹配的歌词文件
+      // 如果没有找到直接匹配的歌词文件，再查找同一目录下的其他可能匹配的LRC文件
       if (lyricsFilePath == null) {
-        final directory = path.dirname(filePath);
-        final dir = Directory(directory);
+        final dir = Directory(path.dirname(filePath));
         final files = await dir.list().toList();
         
-        // 准备歌曲标题的不同形式，用于匹配
-        final searchTitles = [
-          title.toLowerCase(),
-          title.replaceAll(RegExp(r'[^\w\s]'), '').toLowerCase(),
-          fileNameWithoutExt.toLowerCase()
-        ];
-        
+        // 查找文件名包含歌曲标题或艺术家的LRC文件
         for (final entity in files) {
-          if (entity is File) {
-            final ext = path.extension(entity.path).toLowerCase();
-            if (FileService.supportedLyricFormats.contains(ext.replaceFirst('.', ''))) {
-              final basename = path.basenameWithoutExtension(entity.path).toLowerCase();
+          if (entity is File && 
+              validLrcExtensions.contains(path.extension(entity.path).toLowerCase()) &&
+              !entity.path.toLowerCase().contains('test')) {  // 排除测试文件
+            
+            final basename = path.basenameWithoutExtension(entity.path).toLowerCase();
+            
+            // 检查歌词文件名是否包含歌曲标题或艺术家名称
+            if ((title.isNotEmpty && basename.contains(title.toLowerCase())) ||
+                (artist != '未知艺术家' && basename.contains(artist.toLowerCase()))) {
               
-              // 检查是否与任何标题形式匹配
-              for (final searchTitle in searchTitles) {
-                if (basename.contains(searchTitle) || searchTitle.contains(basename)) {
-                  lyricsFilePath = entity.path;
-                  debugPrint('找到匹配的歌词文件: $lyricsFilePath');
-                  break;
+              // 对于txt文件，验证内容
+              if (path.extension(entity.path).toLowerCase() == '.txt') {
+                final content = await entity.readAsString();
+                final sampleLines = content.split('\n').take(5).toList();
+                
+                // 检查是否包含类似时间标签的内容 [mm:ss.xx]
+                final hasTimeTag = sampleLines.any((line) => 
+                    RegExp(r'\[\d{2}:\d{2}\.\d{2}\]').hasMatch(line));
+                
+                if (!hasTimeTag) {
+                  continue;
                 }
               }
               
-              if (lyricsFilePath != null) break;
+              lyricsFilePath = entity.path;
+              debugPrint('找到匹配的歌词文件: $lyricsFilePath');
+              break;
             }
           }
         }
@@ -204,32 +349,8 @@ class MusicFile {
       debugPrint('查找歌词文件失败: $e');
     }
     
-    // 查找专辑封面图像
-    String? coverPath;
-    try {
-      coverPath = await _findCoverImage(filePath);
-    } catch (e) {
-      debugPrint('查找封面图像失败: $e');
-    }
-    
-    // 时长如果无效，使用默认值
-    if (duration.inSeconds <= 0) {
-      duration = const Duration(seconds: 180); // 默认3分钟
-      debugPrint('时长无效，设置默认时长: ${duration.inSeconds}秒');
-    }
-    
-    // 检查嵌入式封面
-    if (embeddedCoverBytes != null && embeddedCoverBytes!.isNotEmpty) {
-      hasEmbeddedCover = true;
-      debugPrint('成功读取内嵌封面图片');
-    }
-    
-    // 生成稳定ID（基于文件路径）
-    final fileId = _generateStableId(filePath);
-    debugPrint('为文件生成稳定ID: $fileId');
-    
     return MusicFile(
-      id: fileId,
+      id: id,
       filePath: filePath.replaceAll('\\', '/'),
       fileName: fileName,
       fileExtension: fileExtension,
@@ -254,19 +375,18 @@ class MusicFile {
     );
   }
   
-  // 生成稳定的ID (基于文件路径)
-  static String generateStableId(String filePath) {
-    // 规范化路径，防止不同格式导致不同的ID
-    String normalizedPath = filePath.replaceAll('\\', '/').toLowerCase();
+  // 生成音乐文件的唯一ID
+  static String _generateMusicFileId(String filePath) {
+    // 规范化路径（统一路径分隔符，小写处理）
+    final normalizedPath = filePath.replaceAll('\\', '/').toLowerCase();
     
-    // 计算文件路径的哈希值
-    int hashCode = normalizedPath.hashCode;
+    // 使用路径生成一个哈希，然后取前8位作为ID前缀
+    final bytes = utf8.encode(normalizedPath);
+    final digest = sha1.convert(bytes);
+    final hashString = digest.toString().substring(0, 8);
     
-    // 转换为32位十六进制字符串
-    String hexString = hashCode.toUnsigned(32).toRadixString(16).padLeft(8, '0');
-    
-    // 格式化为类似UUID的格式
-    return 'music-$hexString';
+    // 返回带有前缀的ID
+    return 'music-$hashString';
   }
   
   // 直接从MP3文件读取ID3标签
@@ -1035,15 +1155,196 @@ class MusicFile {
     return embeddedCoverBytes;
   }
   
+  // 确保封面数据可用，如果内存中没有但hasEmbeddedCover为true，则尝试重新加载
+  Future<List<int>?> ensureCoverBytes() async {
+    // 如果已经有封面数据，直接返回
+    if (embeddedCoverBytes != null && embeddedCoverBytes!.isNotEmpty) {
+      return embeddedCoverBytes;
+    }
+    
+    // 如果标记为有内嵌封面但数据为空，尝试重新加载
+    if (hasEmbeddedCover) {
+      debugPrint('图片数据不在内存中但标记为有内嵌封面，尝试重新加载: $title');
+      
+      try {
+        // 检查文件是否存在
+        final file = File(filePath);
+        if (!await file.exists()) {
+          debugPrint('文件不存在，无法重新加载封面: $filePath');
+          return null;
+        }
+        
+        // 根据文件扩展名决定加载方式
+        if (fileExtension.toLowerCase() == 'mp3') {
+          // 从MP3文件重新加载封面
+          final metadata = await _readID3TagsFromMP3File(filePath);
+          embeddedCoverBytes = metadata['coverBytes'] as List<int>?;
+          if (embeddedCoverBytes != null && embeddedCoverBytes!.isNotEmpty) {
+            debugPrint('成功从MP3文件重新加载封面: ${embeddedCoverBytes!.length} 字节');
+            return embeddedCoverBytes;
+          }
+        } else if (fileExtension.toLowerCase() == 'flac') {
+          // 从FLAC文件重新加载封面
+          try {
+            final standardMetadata = await MetadataRetriever.fromFile(file);
+            if (standardMetadata.albumArt != null && standardMetadata.albumArt!.isNotEmpty) {
+              embeddedCoverBytes = standardMetadata.albumArt;
+              debugPrint('成功从FLAC文件重新加载封面: ${embeddedCoverBytes!.length} 字节');
+              return embeddedCoverBytes;
+            }
+          } catch (e) {
+            debugPrint('使用标准库从FLAC重新加载封面失败: $e');
+            
+            // 尝试手动加载FLAC封面
+            final fileSize = await file.length();
+            final headerSize = min(512 * 1024, fileSize);
+            final headerData = await file.openRead(0, headerSize).toList();
+            final fileHeader = Uint8List.fromList(headerData.expand((x) => x).toList());
+            
+            // 查找FLAC魔数 ("fLaC")
+            if (fileHeader.length >= 4 && 
+                fileHeader[0] == 0x66 && fileHeader[1] == 0x4C && 
+                fileHeader[2] == 0x61 && fileHeader[3] == 0x43) {
+              
+              int offset = 4; // 跳过魔数
+              bool isLastBlock = false;
+              
+              // 循环读取所有元数据块找PICTURE块
+              while (!isLastBlock && offset < fileHeader.length - 4) {
+                int blockHeader = fileHeader[offset];
+                isLastBlock = (blockHeader & 0x80) != 0;
+                int blockType = blockHeader & 0x7F;
+                
+                int blockLength = (fileHeader[offset + 1] << 16) | 
+                                 (fileHeader[offset + 2] << 8) | 
+                                 fileHeader[offset + 3];
+                
+                if (blockType == 6 && offset + 4 + blockLength <= fileHeader.length) {
+                  // 找到PICTURE块，尝试提取图片
+                  int pictureType = (fileHeader[offset + 4] << 24) | 
+                                   (fileHeader[offset + 4 + 1] << 16) | 
+                                   (fileHeader[offset + 4 + 2] << 8) | 
+                                   fileHeader[offset + 4 + 3];
+                  
+                  int mimeLength = (fileHeader[offset + 4 + 4] << 24) | 
+                                  (fileHeader[offset + 4 + 5] << 16) | 
+                                  (fileHeader[offset + 4 + 6] << 8) | 
+                                  fileHeader[offset + 4 + 7];
+                  
+                  if (mimeLength > 0 && offset + 4 + 8 + mimeLength <= offset + 4 + blockLength) {
+                    int descLength = (fileHeader[offset + 4 + 8 + mimeLength] << 24) | 
+                                    (fileHeader[offset + 4 + 8 + mimeLength + 1] << 16) | 
+                                    (fileHeader[offset + 4 + 8 + mimeLength + 2] << 8) | 
+                                    fileHeader[offset + 4 + 8 + mimeLength + 3];
+                    
+                    int pictureDataOffset = offset + 4 + 8 + mimeLength + 4 + descLength + 16;
+                    
+                    int pictureLength = (fileHeader[pictureDataOffset - 4] << 24) | 
+                                       (fileHeader[pictureDataOffset - 3] << 16) | 
+                                       (fileHeader[pictureDataOffset - 2] << 8) | 
+                                       fileHeader[pictureDataOffset - 1];
+                    
+                    if (pictureLength > 0 && pictureDataOffset + pictureLength <= offset + 4 + blockLength) {
+                      List<int> pictureData = fileHeader.sublist(pictureDataOffset, pictureDataOffset + pictureLength).toList();
+                      
+                      if (pictureData.length >= 8 && 
+                          ((pictureData[0] == 0xFF && pictureData[1] == 0xD8) || // JPEG
+                           (pictureData[0] == 0x89 && pictureData[1] == 0x50))) { // PNG
+                        
+                        embeddedCoverBytes = pictureData;
+                        debugPrint('成功从FLAC PICTURE块手动重新加载封面: ${pictureData.length} 字节');
+                        return embeddedCoverBytes;
+                      }
+                    }
+                  }
+                }
+                
+                offset += 4 + blockLength;
+              }
+            }
+          }
+        } else {
+          // 从其他格式音频文件加载封面
+          try {
+            final standardMetadata = await MetadataRetriever.fromFile(file);
+            if (standardMetadata.albumArt != null && standardMetadata.albumArt!.isNotEmpty) {
+              embeddedCoverBytes = standardMetadata.albumArt;
+              debugPrint('成功从音频文件重新加载封面: ${embeddedCoverBytes!.length} 字节');
+              return embeddedCoverBytes;
+            }
+          } catch (e) {
+            debugPrint('从音频文件重新加载封面失败: $e');
+          }
+        }
+      } catch (e) {
+        debugPrint('重新加载封面失败: $e');
+      }
+      
+      debugPrint('无法重新加载封面: $title');
+    }
+    
+    return null;
+  }
+  
   // 获取歌词内容（优先使用外部歌词文件，其次使用内嵌歌词）
   Future<List<String>?> getLyrics() async {
+    debugPrint('获取歌词：$title, 外部歌词路径: $lyricsPath, 是否有内嵌歌词: $hasEmbeddedLyrics');
     // 优先检查外部歌词文件
     if (lyricsPath != null) {
       try {
         final file = File(lyricsPath!);
         if (await file.exists()) {
+          // 读取文件内容前，检查文件大小
+          final stat = await file.stat();
+          if (stat.size > 10 * 1024 * 1024) { // 10MB限制
+            debugPrint('歌词文件过大，跳过加载: ${stat.size} 字节');
+            // 如果文件过大，考虑使用内嵌歌词
+            if (hasEmbeddedLyrics && embeddedLyrics != null) {
+              return embeddedLyrics;
+            }
+            return null;
+          }
+          
+          // 检查文件名是否包含test
+          if (lyricsPath!.toLowerCase().contains('test')) {
+            final fileName = path.basename(lyricsPath!).toLowerCase();
+            // 读取文件前几行，检查是否真的是歌词文件
+            final content = await file.readAsString();
+            final sampleLines = content.split('\n').take(5).toList();
+            
+            // 检查是否包含类似时间标签的内容 [mm:ss.xx]
+            final hasTimeTag = sampleLines.any((line) => 
+                RegExp(r'\[\d{2}:\d{2}\.\d{2}\]').hasMatch(line));
+                
+            if (!hasTimeTag && fileName == 'test.txt') {
+              debugPrint('跳过可能的测试文件: $lyricsPath');
+              // 尝试使用内嵌歌词
+              if (hasEmbeddedLyrics && embeddedLyrics != null) {
+                return embeddedLyrics;
+              }
+              return null;
+            }
+          }
+          
+          // 读取歌词文件
           final String content = await file.readAsString();
-          return content.split('\n');
+          final List<String> lines = content.split('\n');
+          
+          // 检查是否是有效的歌词文件
+          final validLyricLines = lines.where((line) {
+            line = line.trim();
+            // 空行跳过但不视为无效
+            if (line.isEmpty) return false;
+            // 检查是否包含时间标签或是纯文本歌词
+            return RegExp(r'\[\d{2}:\d{2}\.\d{2}\]').hasMatch(line) || !line.startsWith('[');
+          }).toList();
+          
+          if (validLyricLines.isNotEmpty) {
+            debugPrint('成功从外部文件加载歌词: $title');
+            return lines;
+          } else {
+            debugPrint('外部歌词文件格式无效，尝试使用内嵌歌词');
+          }
         }
       } catch (e) {
         debugPrint('读取外部歌词文件失败: $e');
@@ -1052,7 +1353,28 @@ class MusicFile {
     
     // 其次使用内嵌歌词
     if (hasEmbeddedLyrics && embeddedLyrics != null) {
+      debugPrint('使用内嵌歌词: $title');
       return embeddedLyrics;
+    }
+    
+    // 如果是FLAC或其他格式，尝试再次提取内嵌歌词
+    if (fileExtension == 'flac') {
+      try {
+        final extractedLyrics = await _extractLyricsFromFlacFile(filePath);
+        if (extractedLyrics != null && extractedLyrics.isNotEmpty) {
+          debugPrint('成功从FLAC文件中提取内嵌歌词: $title');
+          return extractedLyrics;
+        }
+      } catch (e) {
+        debugPrint('重新提取FLAC歌词失败: $e');
+      }
+    }
+    
+    // 最后尝试从文件名生成占位歌词
+    debugPrint('没有找到歌词，使用文件名作为占位歌词: $title');
+    final displayTitle = title.isNotEmpty ? title : fileName;
+    if (displayTitle.isNotEmpty) {
+      return ['[00:00.00]$displayTitle - $artist', '[00:05.00]$album'];
     }
     
     return null;
@@ -1064,10 +1386,33 @@ class MusicFile {
     List<int>? coverBytes;
     if (json['embeddedCoverBytes'] != null) {
       try {
-        coverBytes = base64Decode(json['embeddedCoverBytes']);
-        debugPrint('从JSON中恢复封面图片数据，大小: ${coverBytes.length} 字节');
+        final String base64String = json['embeddedCoverBytes'].toString();
+        if (base64String.isNotEmpty) {
+          coverBytes = base64Decode(base64String);
+          debugPrint('从JSON中恢复封面图片数据，大小: ${coverBytes.length} 字节，歌曲: ${json['title']}');
+          
+          // 验证图片数据的有效性
+          if (coverBytes.length >= 8) {
+            bool isValidImage = false;
+            
+            if ((coverBytes[0] == 0xFF && coverBytes[1] == 0xD8) || // JPEG
+                (coverBytes[0] == 0x89 && coverBytes[1] == 0x50 && 
+                 coverBytes[2] == 0x4E && coverBytes[3] == 0x47)) { // PNG
+              isValidImage = true;
+            }
+            
+            if (!isValidImage) {
+              debugPrint('警告: 恢复的图片数据格式无效，歌曲: ${json['title']}');
+              // 我们仍然保留数据，让应用尝试使用
+            }
+          } else {
+            debugPrint('警告: 恢复的图片数据太小(${coverBytes.length}字节)，歌曲: ${json['title']}');
+          }
+        } else {
+          debugPrint('警告: Base64字符串为空，歌曲: ${json['title']}');
+        }
       } catch (e) {
-        debugPrint('解码封面图片数据失败: $e');
+        debugPrint('解码封面图片数据失败: $e，歌曲: ${json['title']}');
       }
     }
     
@@ -1080,12 +1425,13 @@ class MusicFile {
         } else if (json['embeddedLyrics'] is String) {
           lyrics = (json['embeddedLyrics'] as String).split('\n');
         }
-        debugPrint('从JSON中恢复内嵌歌词，行数: ${lyrics?.length ?? 0}');
+        debugPrint('从JSON中恢复内嵌歌词，行数: ${lyrics?.length ?? 0}，歌曲: ${json['title']}');
       } catch (e) {
-        debugPrint('解码内嵌歌词数据失败: $e');
+        debugPrint('解码内嵌歌词数据失败: $e，歌曲: ${json['title']}');
       }
     }
     
+    // 创建MusicFile对象
     return MusicFile(
       id: json['id'] ?? const Uuid().v4(),
       filePath: json['filePath'] ?? '',
@@ -1148,7 +1494,7 @@ class MusicFile {
     if (hasEmbeddedCover && embeddedCoverBytes != null) {
       try {
         // 限制封面大小，防止JSON过大
-        final maxSize = 300 * 1024; // 300KB
+        final maxSize = 512 * 1024; // 从300KB增加到512KB
         if (embeddedCoverBytes!.length > maxSize) {
           debugPrint('封面图片过大(${embeddedCoverBytes!.length}字节)，跳过存储');
         } else {
@@ -1273,7 +1619,13 @@ class MusicFile {
             // 尝试用GBK解码(常见于中文MP3)
             lyrics = gbk.decode(lyricsData);
           } catch (_) {
-            lyrics = String.fromCharCodes(lyricsData);
+            try {
+              // 如果GBK解码失败，尝试使用UTF-8
+              lyrics = utf8.decode(lyricsData);
+            } catch (_) {
+              // 如果UTF-8也失败，回退到ISO-8859-1
+              lyrics = String.fromCharCodes(lyricsData);
+            }
           }
           break;
         case 1: // UTF-16 with BOM
@@ -1297,12 +1649,33 @@ class MusicFile {
           try {
             lyrics = utf8.decode(lyricsData);
           } catch (_) {
-            lyrics = String.fromCharCodes(lyricsData);
+            try {
+              // 如果UTF-8解码失败，尝试GBK（常见于中文环境）
+              lyrics = gbk.decode(lyricsData);
+            } catch (_) {
+              // 如果GBK也失败，回退到基本字符编码
+              lyrics = String.fromCharCodes(lyricsData);
+            }
           }
           break;
       }
       
-      return lyrics.trim();
+      // 处理歌词文本，去除不必要的空白行和控制字符
+      final processedLyrics = lyrics
+          .split('\n')
+          .map((line) => line.trim())
+          .where((line) => line.isNotEmpty)
+          .join('\n');
+      
+      // 检查是否包含时间标签 [mm:ss.xx]
+      bool hasTimeTag = RegExp(r'\[\d{2}:\d{2}\.\d{2}\]').hasMatch(processedLyrics);
+      
+      // 如果没有时间标签，检查是否需要添加
+      if (!hasTimeTag) {
+        debugPrint('歌词缺少时间标签，将使用简单格式');
+      }
+      
+      return processedLyrics.trim();
     } catch (e) {
       debugPrint('解析USLT歌词失败: $e');
       return '';
@@ -1431,6 +1804,7 @@ class MusicFile {
   static List<int>? _extractImageFromAPICFrame(Uint8List data, String frameId) {
     try {
       if (data.length < 4) {
+        debugPrint('APIC帧数据长度不足: ${data.length}字节');
         return null;
       }
       
@@ -1438,42 +1812,573 @@ class MusicFile {
       int offset = 1;
       
       // 跳过MIME类型直到遇到终止符(0)
+      final initialMimeOffset = offset;
       while (offset < data.length && data[offset] != 0) {
         offset++;
       }
       
-      // 跳过终止符
-      offset++;
+      // 验证格式并跳过终止符
+      if (offset >= data.length) {
+        debugPrint('无效的APIC帧: 找不到MIME类型结束符');
+        return null;
+      }
+      
+      // 提取MIME类型用于调试
+      final mimeType = String.fromCharCodes(data.sublist(initialMimeOffset, offset));
+      debugPrint('检测到MIME类型: $mimeType');
+      
+      offset++; // 跳过终止符
       
       // 跳过图片类型(1字节)
+      if (offset >= data.length) {
+        debugPrint('无效的APIC帧: 数据不足以包含图片类型字节');
+        return null;
+      }
+      int pictureType = data[offset];
       offset++;
       
-      // 跳过描述文本直到遇到终止符
+      // 调试输出
+      debugPrint('发现图片类型: $pictureType (${_getPictureTypeName(pictureType)})');
+      
+      // 跳过描述文本
+      final initialDescOffset = offset;
+      bool foundTerminator = false;
+      
       if (encoding == 0 || encoding == 3) { // ISO-8859-1 或 UTF-8
+        // 找到单字节终止符
         while (offset < data.length && data[offset] != 0) {
           offset++;
         }
-        offset++; // 跳过终止符
-      } else { // UTF-16
+        
+        if (offset < data.length) {
+          foundTerminator = true;
+          offset++; // 跳过终止符
+        }
+      } else if (encoding == 1) { // UTF-16 with BOM
+        // 检查BOM并跳过
+        if (offset + 1 < data.length) {
+          // 检查UTF-16 BOM (0xFF 0xFE or 0xFE 0xFF)
+          bool isBomPresent = (data[offset] == 0xFF && data[offset + 1] == 0xFE) || 
+                             (data[offset] == 0xFE && data[offset + 1] == 0xFF);
+          
+          if (isBomPresent) {
+            offset += 2; // 跳过BOM
+          }
+          
+          // 查找双字节终止符 (0x00 0x00)
+          while (offset < data.length - 1) {
+            if (data[offset] == 0 && data[offset + 1] == 0) {
+              foundTerminator = true;
+              offset += 2; // 跳过终止符
+              break;
+            }
+            offset += 2;
+          }
+        }
+      } else if (encoding == 2) { // UTF-16BE without BOM
+        // 查找双字节终止符 (0x00 0x00)
         while (offset < data.length - 1) {
           if (data[offset] == 0 && data[offset + 1] == 0) {
+            foundTerminator = true;
+            offset += 2; // 跳过终止符
             break;
           }
           offset += 2;
         }
-        offset += 2; // 跳过终止符
       }
       
-      // 现在 offset 指向图片数据的开始
+      // 提取描述文本用于调试
+      if (initialDescOffset < offset - (foundTerminator ? (encoding == 0 || encoding == 3 ? 1 : 2) : 0)) {
+        final descriptionData = data.sublist(initialDescOffset, offset - (foundTerminator ? (encoding == 0 || encoding == 3 ? 1 : 2) : 0));
+        String? description;
+        try {
+          if (encoding == 0) { // ISO-8859-1
+            description = String.fromCharCodes(descriptionData);
+          } else if (encoding == 3) { // UTF-8
+            description = utf8.decode(descriptionData, allowMalformed: true);
+          } else { // UTF-16
+            description = "(UTF-16 编码描述)";
+          }
+          if (description.isNotEmpty) {
+            debugPrint('图片描述: $description');
+          }
+        } catch (e) {
+          debugPrint('解码图片描述失败: $e');
+        }
+      }
+      
+      // 如果没有找到终止符，但我们已经接近数据末尾，可以假设剩余部分是图片数据
+      if (!foundTerminator) {
+        debugPrint('警告: 未找到描述文本终止符，尝试继续处理');
+        // 保守处理，确保我们有足够空间用于图片头
+        if (data.length - offset < 8) {
+          debugPrint('数据剩余不足以包含有效图片');
+          return null;
+        }
+      }
+      
+      // 检查是否有足够的数据包含图片
       if (offset >= data.length) {
+        debugPrint('无效的APIC帧: 没有图片数据');
         return null;
       }
       
-      // 返回剩余的数据作为图片
-      return data.sublist(offset).toList();
-    } catch (e) {
-      debugPrint('解析APIC图片数据失败: $e');
+      // 剩余部分是图片数据
+      final imageData = data.sublist(offset);
+      
+      // 验证图片数据格式
+      if (imageData.length >= 8) {
+        // 检查常见图片格式头部标记
+        bool isValidImage = false;
+        String imageFormat = "未知";
+        
+        if (imageData[0] == 0xFF && imageData[1] == 0xD8) {
+          isValidImage = true;
+          imageFormat = "JPEG";
+        } else if (imageData[0] == 0x89 && imageData[1] == 0x50 && 
+                  imageData[2] == 0x4E && imageData[3] == 0x47) {
+          isValidImage = true;
+          imageFormat = "PNG";
+        } else if (imageData[0] == 0x47 && imageData[1] == 0x49 && 
+                  imageData[2] == 0x46 && imageData[3] == 0x38) {
+          isValidImage = true;
+          imageFormat = "GIF";
+        } else if (imageData[0] == 0x42 && imageData[1] == 0x4D) {
+          isValidImage = true;
+          imageFormat = "BMP";
+        } else if (imageData[0] == 0x52 && imageData[1] == 0x49 && 
+                  imageData[2] == 0x46 && imageData[3] == 0x46 &&
+                  imageData[8] == 0x57 && imageData[9] == 0x45 && 
+                  imageData[10] == 0x42 && imageData[11] == 0x50) {
+          isValidImage = true;
+          imageFormat = "WebP";
+        }
+        
+        if (isValidImage) {
+          debugPrint('成功提取 $imageFormat 格式图片数据: ${imageData.length} 字节');
+          
+          // 限制图片大小，防止内存问题
+          final maxSize = 5 * 1024 * 1024; // 5MB
+          if (imageData.length > maxSize) {
+            debugPrint('图片过大，截断到 $maxSize 字节');
+            return imageData.sublist(0, maxSize);
+          }
+          
+          return imageData;
+        } else {
+          // 尝试寻找常见图片格式的标记
+          for (int i = 0; i < imageData.length - 4; i++) {
+            if ((imageData[i] == 0xFF && imageData[i+1] == 0xD8) || // JPEG
+                (imageData[i] == 0x89 && imageData[i+1] == 0x50 && 
+                 imageData[i+2] == 0x4E && imageData[i+3] == 0x47)) { // PNG
+              debugPrint('在偏移 $i 处发现图片头，尝试从此处提取');
+              final validImage = imageData.sublist(i);
+              
+              // 限制图片大小
+              final maxSize = 5 * 1024 * 1024; // 5MB
+              if (validImage.length > maxSize) {
+                return validImage.sublist(0, maxSize);
+              }
+              
+              return validImage;
+            }
+          }
+          
+          final hexPrefix = imageData.take(min(16, imageData.length))
+            .map((b) => b.toRadixString(16).padLeft(2, '0'))
+            .join(' ');
+          debugPrint('提取的数据不是有效的图片格式。头部字节: $hexPrefix...');
+        }
+      } else {
+        debugPrint('图片数据过小，不可能是有效图片: ${imageData.length} 字节');
+      }
+      
       return null;
+    } catch (e) {
+      debugPrint('提取APIC图片数据失败: $e');
+      return null;
+    }
+  }
+  
+  // 获取图片类型名称
+  static String _getPictureTypeName(int type) {
+    switch (type) {
+      case 0: return "其他";
+      case 1: return "32x32像素文件图标";
+      case 2: return "其他文件图标";
+      case 3: return "封面（前）";
+      case 4: return "封面（背）";
+      case 5: return "传单页";
+      case 6: return "媒体";
+      case 7: return "主导艺术家/表演者";
+      case 8: return "艺术家/表演者";
+      case 9: return "指挥";
+      case 10: return "乐队/管弦乐队";
+      case 11: return "作曲家";
+      case 12: return "作词家/文本作者";
+      case 13: return "录音地点";
+      case 14: return "录音期间";
+      case 15: return "录像";
+      case 16: return "鱼/开心";
+      case 17: return "表演者";
+      case 18: return "作品";
+      case 19: return "网页设计";
+      case 20: return "官方标志";
+      default: return "未知类型";
+    }
+  }
+  
+  // 从FLAC文件提取歌词
+  static Future<List<String>?> _extractLyricsFromFlacFile(String filePath) async {
+    try {
+      final file = File(filePath);
+      if (!await file.exists()) {
+        return null;
+      }
+      
+      // 读取文件头部用于识别FLAC格式
+      final headerBytes = await file.openRead(0, 4).toList();
+      final header = Uint8List.fromList(headerBytes.expand((x) => x).toList());
+      
+      // 检查FLAC魔数 ("fLaC")
+      if (header.length < 4 || 
+          header[0] != 0x66 || header[1] != 0x4C || 
+          header[2] != 0x61 || header[3] != 0x43) {
+        debugPrint('不是有效的FLAC文件');
+        return null;
+      }
+      
+      // 使用flutter_media_metadata尝试获取元数据
+      final metadataRetriever = await MetadataRetriever.fromFile(file);
+      
+      // 尝试从各种来源提取歌词
+      // 1. 查看标准元数据字段
+      String? lyricsContent;
+      final trackName = metadataRetriever.trackName;
+      final artistNames = metadataRetriever.trackArtistNames;
+      final albumName = metadataRetriever.albumName;
+      
+      debugPrint('FLAC元数据: 标题=$trackName, 艺术家=${artistNames?.join(", ")}, 专辑=$albumName');
+      
+      // 2. 尝试从文件名和路径提取可能的歌词文件路径
+      final directory = path.dirname(filePath);
+      final baseName = path.basenameWithoutExtension(filePath);
+      final possibleLyricsFiles = [
+        path.join(directory, '$baseName.lrc'),
+        path.join(directory, '$baseName.txt'),
+      ];
+      
+      for (final lyricsPath in possibleLyricsFiles) {
+        try {
+          final lyricsFile = File(lyricsPath);
+          if (await lyricsFile.exists()) {
+            final content = await lyricsFile.readAsString();
+            if (content.isNotEmpty && content.contains('[') && 
+                RegExp(r'\[\d{2}:\d{2}\.\d{2}\]').hasMatch(content)) {
+              debugPrint('找到FLAC对应的外部歌词文件: $lyricsPath');
+              return content.split('\n')
+                  .map((line) => line.trim())
+                  .where((line) => line.isNotEmpty)
+                  .toList();
+            }
+          }
+        } catch (e) {
+          debugPrint('读取可能的歌词文件失败: $e');
+        }
+      }
+      
+      // 3. 直接尝试在二进制数据中搜索歌词内容
+      try {
+        final maxReadSize = 32 * 1024; // 32KB
+        final firstPortion = await file.openRead(0, maxReadSize).toList();
+        final firstPortionData = Uint8List.fromList(firstPortion.expand((x) => x).toList());
+        
+        // 尝试从二进制数据中提取可能的歌词内容
+        String? possibleLyrics = _searchForLyricsInBinaryData(firstPortionData);
+        if (possibleLyrics != null && 
+            possibleLyrics.contains('[') && 
+            RegExp(r'\[\d{2}:\d{2}\.\d{2}\]').hasMatch(possibleLyrics)) {
+          debugPrint('在FLAC二进制数据中找到可能的歌词');
+          return possibleLyrics.split('\n')
+              .map((line) => line.trim())
+              .where((line) => line.isNotEmpty)
+              .toList();
+        }
+      } catch (e) {
+        debugPrint('读取FLAC二进制数据失败: $e');
+      }
+      
+      return null;
+    } catch (e) {
+      debugPrint('提取FLAC歌词时发生错误: $e');
+      return null;
+    }
+  }
+
+  // 在二进制数据中搜索歌词内容
+  static String? _searchForLyricsInBinaryData(Uint8List data) {
+    try {
+      // 尝试不同的编码方式解码
+      List<String> attemptedTexts = [];
+      
+      // 尝试UTF-8解码
+      try {
+        String utf8Text = utf8.decode(data);
+        attemptedTexts.add(utf8Text);
+      } catch (e) {
+        // 解码失败，忽略
+      }
+      
+      // 尝试Latin1解码
+      try {
+        String latin1Text = String.fromCharCodes(data);
+        attemptedTexts.add(latin1Text);
+      } catch (e) {
+        // 解码失败，忽略
+      }
+      
+      // 尝试GBK解码
+      try {
+        String gbkText = gbk.decode(data);
+        attemptedTexts.add(gbkText);
+      } catch (e) {
+        // 解码失败，忽略
+      }
+      
+      // 在所有解码的文本中搜索歌词
+      for (final text in attemptedTexts) {
+        // 寻找可能的歌词开始标记
+        int lyricsStartIndex = text.indexOf('[00:');
+        if (lyricsStartIndex == -1) {
+          lyricsStartIndex = text.indexOf('[0:');
+        }
+        
+        if (lyricsStartIndex != -1) {
+          // 从可能的歌词开始位置截取数据
+          String potentialLyrics = text.substring(lyricsStartIndex);
+          
+          // 找到几个连续的时间标签，确认是歌词内容
+          int timeTagCount = RegExp(r'\[\d{1,2}:\d{2}\.\d{2}\]').allMatches(
+              potentialLyrics.substring(0, min(potentialLyrics.length, 200))).length;
+          
+          if (timeTagCount >= 2) {
+            // 清理并截断过长的内容
+            int endIndex = potentialLyrics.indexOf('\0');
+            if (endIndex != -1) {
+              potentialLyrics = potentialLyrics.substring(0, endIndex);
+            }
+            
+            // 清理无效字符
+            potentialLyrics = potentialLyrics.replaceAll(RegExp(r'[\x00-\x1F]'), '');
+            return potentialLyrics;
+          }
+        }
+      }
+      
+      return null;
+    } catch (e) {
+      debugPrint('在二进制数据中搜索歌词失败: $e');
+      return null;
+    }
+  }
+
+  static Future<Map<String, dynamic>> _readFLACMetadata(String filePath) async {
+    debugPrint('使用专用方法解析FLAC元数据: $filePath');
+    Map<String, dynamic> metadata = {
+      'title': '',
+      'artist': '',
+      'album': '',
+      'duration': const Duration(seconds: 0),
+      'coverBytes': null,
+      'lyrics': null,
+      'hasEmbeddedCover': false,
+      'hasEmbeddedLyrics': false
+    };
+    
+    try {
+      final file = File(filePath);
+      if (!await file.exists()) {
+        debugPrint('FLAC文件不存在: $filePath');
+        return metadata;
+      }
+      
+      // 首先尝试使用flutter_media_metadata作为主要元数据和封面提取方法
+      try {
+        final standardMetadata = await MetadataRetriever.fromFile(file);
+        
+        // 保存可用的元数据
+        if (standardMetadata.trackName != null && standardMetadata.trackName!.isNotEmpty) {
+          metadata['title'] = standardMetadata.trackName!;
+        }
+        
+        if (standardMetadata.trackArtistNames != null && standardMetadata.trackArtistNames!.isNotEmpty) {
+          metadata['artist'] = standardMetadata.trackArtistNames!.join(', ');
+        }
+        
+        if (standardMetadata.albumName != null && standardMetadata.albumName!.isNotEmpty) {
+          metadata['album'] = standardMetadata.albumName!;
+        }
+        
+        if (standardMetadata.trackDuration != null && standardMetadata.trackDuration! > 0) {
+          metadata['duration'] = Duration(milliseconds: standardMetadata.trackDuration!);
+        }
+        
+        // 提取封面
+        if (standardMetadata.albumArt != null && standardMetadata.albumArt!.isNotEmpty) {
+          metadata['coverBytes'] = standardMetadata.albumArt;
+          metadata['hasEmbeddedCover'] = true;
+          debugPrint('使用flutter_media_metadata成功提取FLAC封面: ${standardMetadata.albumArt!.length} 字节');
+        }
+      } catch (e) {
+        debugPrint('使用标准库解析FLAC元数据失败: $e, 尝试手动解析');
+      }
+      
+      // 如果标准库未能提取封面，尝试从文件中手动读取PICTURE块
+      if (!metadata['hasEmbeddedCover']) {
+        // 增加读取大小以确保捕获封面图片
+        final fileSize = await file.length();
+        final headerSize = min(512 * 1024, fileSize); // 读取前512KB用于查找PICTURE块，从128KB增加
+        
+        try {
+          final headerData = await file.openRead(0, headerSize).toList();
+          final fileHeader = Uint8List.fromList(headerData.expand((x) => x).toList());
+          
+          // 查找FLAC魔数 ("fLaC")
+          if (fileHeader.length >= 4 && 
+              fileHeader[0] == 0x66 && fileHeader[1] == 0x4C && 
+              fileHeader[2] == 0x61 && fileHeader[3] == 0x43) {
+            
+            int offset = 4; // 跳过魔数
+            bool isLastBlock = false;
+            
+            // 循环读取所有元数据块找PICTURE块
+            while (!isLastBlock && offset < fileHeader.length - 4) {
+              // 读取块头
+              int blockHeader = fileHeader[offset];
+              isLastBlock = (blockHeader & 0x80) != 0;
+              int blockType = blockHeader & 0x7F;
+              
+              // 块长度 (24位大端序)
+              int blockLength = (fileHeader[offset + 1] << 16) | 
+                               (fileHeader[offset + 2] << 8) | 
+                               fileHeader[offset + 3];
+              
+              // 确保我们有足够的数据读取整个块
+              if (offset + 4 + blockLength > fileHeader.length) {
+                break;
+              }
+              
+              // 检查是否为PICTURE块(类型6)
+              if (blockType == 6) {
+                try {
+                  // 图片类型 (4字节)
+                  int pictureType = (fileHeader[offset + 4] << 24) | 
+                                   (fileHeader[offset + 4 + 1] << 16) | 
+                                   (fileHeader[offset + 4 + 2] << 8) | 
+                                   fileHeader[offset + 4 + 3];
+                  
+                  // MIME类型长度 (4字节)
+                  int mimeLength = (fileHeader[offset + 4 + 4] << 24) | 
+                                  (fileHeader[offset + 4 + 5] << 16) | 
+                                  (fileHeader[offset + 4 + 6] << 8) | 
+                                  fileHeader[offset + 4 + 7];
+                  
+                  if (mimeLength > 0 && offset + 4 + 8 + mimeLength <= offset + 4 + blockLength) {
+                    // MIME类型
+                    Uint8List mimeData = fileHeader.sublist(offset + 4 + 8, offset + 4 + 8 + mimeLength);
+                    String mimeType = utf8.decode(mimeData);
+                    
+                    // 描述长度 (4字节)
+                    int descLength = (fileHeader[offset + 4 + 8 + mimeLength] << 24) | 
+                                    (fileHeader[offset + 4 + 8 + mimeLength + 1] << 16) | 
+                                    (fileHeader[offset + 4 + 8 + mimeLength + 2] << 8) | 
+                                    fileHeader[offset + 4 + 8 + mimeLength + 3];
+                    
+                    int pictureDataOffset = offset + 4 + 8 + mimeLength + 4 + descLength + 16;
+                    
+                    // 图片数据长度 (4字节)
+                    int pictureLength = (fileHeader[pictureDataOffset - 4] << 24) | 
+                                       (fileHeader[pictureDataOffset - 3] << 16) | 
+                                       (fileHeader[pictureDataOffset - 2] << 8) | 
+                                       fileHeader[pictureDataOffset - 1];
+                    
+                    debugPrint('找到FLAC图片块: 类型=$pictureType, MIME=$mimeType, 描述长度=$descLength, 数据长度=$pictureLength');
+                    
+                    if (pictureLength > 0 && pictureDataOffset + pictureLength <= offset + 4 + blockLength) {
+                      // 提取图片数据
+                      List<int> pictureData = fileHeader.sublist(pictureDataOffset, pictureDataOffset + pictureLength).toList();
+                      
+                      // 验证图片数据格式
+                      if (pictureData.length >= 8) {
+                        bool isValidImage = false;
+                        
+                        if ((pictureData[0] == 0xFF && pictureData[1] == 0xD8) || // JPEG
+                            (pictureData[0] == 0x89 && pictureData[1] == 0x50 && 
+                             pictureData[2] == 0x4E && pictureData[3] == 0x47)) { // PNG
+                          isValidImage = true;
+                        }
+                        
+                        if (isValidImage) {
+                          metadata['coverBytes'] = pictureData;
+                          metadata['hasEmbeddedCover'] = true;
+                          debugPrint('成功手动提取FLAC封面: $pictureLength 字节, MIME类型=$mimeType');
+                          break; // 找到封面后退出循环
+                        }
+                      }
+                    }
+                  }
+                } catch (e) {
+                  debugPrint('解析FLAC PICTURE块出错: $e');
+                }
+              }
+              
+              // 移动到下一个元数据块
+              offset += 4 + blockLength;
+            }
+          }
+        } catch (e) {
+          debugPrint('手动提取FLAC封面失败: $e');
+        }
+      }
+      
+      // 从文件名尝试获取基本信息（如果标准库未能提取）
+      if (metadata['title'].isEmpty || metadata['artist'].isEmpty) {
+        final nameWithoutExt = path.basenameWithoutExtension(filePath);
+        
+        // 尝试从文件名解析艺术家和标题 (格式: 艺术家 - 标题.flac)
+        if (nameWithoutExt.contains('-')) {
+          final parts = nameWithoutExt.split('-');
+          if (parts.length >= 2) {
+            if (metadata['artist'].isEmpty) {
+              metadata['artist'] = parts[0].trim();
+            }
+            if (metadata['title'].isEmpty) {
+              metadata['title'] = parts.skip(1).join('-').trim();
+            }
+            debugPrint('从文件名解析: 艺术家=${metadata['artist']}, 标题=${metadata['title']}');
+          }
+        } else if (metadata['title'].isEmpty) {
+          metadata['title'] = nameWithoutExt;
+        }
+      }
+      
+      // 如果没有设置时长，尝试根据文件大小估算
+      if (metadata['duration'].inSeconds == 0) {
+        // 粗略估计: FLAC约1MB/分钟
+        final fileSize = await file.length();
+        int estimatedSeconds = (fileSize / (1024 * 1024) * 60).round();
+        metadata['duration'] = Duration(seconds: max(1, estimatedSeconds)); // 确保至少1秒
+        debugPrint('根据文件大小估算FLAC时长: ${metadata['duration'].inSeconds}秒');
+      }
+      
+      // 显示解析结果
+      debugPrint('FLAC元数据解析完成: 标题=${metadata['title']}, 艺术家=${metadata['artist']}, 专辑=${metadata['album']}');
+      debugPrint('FLAC时长: ${metadata['duration'].inSeconds}秒, 有封面=${metadata['hasEmbeddedCover']}, 有歌词=${metadata['hasEmbeddedLyrics']}');
+      
+      return metadata;
+    } catch (e) {
+      debugPrint('解析FLAC元数据失败: $e');
+      return metadata;
     }
   }
 } 

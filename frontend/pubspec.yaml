@@ -68,6 +68,8 @@ dependencies:
   flutter_media_metadata: ^1.0.0+1
   gbk_codec: ^0.4.0
   rxdart: ^0.27.7
+  # 加密哈希
+  crypto: ^3.0.3
 
 dev_dependencies:
   flutter_test:

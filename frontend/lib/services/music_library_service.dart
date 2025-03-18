@@ -122,10 +122,12 @@ class MusicLibraryService extends ChangeNotifier {
     int skippedCount = 0;
     List<MusicFile> newFiles = [];
     
-    // 创建现有文件路径的规范化Map，提高查找效率
+    // 创建现有文件路径和ID的Map
     final Map<String, bool> existingPaths = {};
+    final Map<String, bool> existingIds = {};
     for (var music in _musicFiles) {
       existingPaths[_normalizePath(music.filePath)] = true;
+      existingIds[music.id] = true;
     }
     
     for (String filePath in filePaths) {
@@ -135,6 +137,7 @@ class MusicLibraryService extends ChangeNotifier {
         
         // 检查文件是否已存在
         if (existingPaths.containsKey(normalizedPath)) {
+          debugPrint('文件已存在，跳过: $filePath');
           skippedCount++;
           continue;
         }
@@ -147,12 +150,24 @@ class MusicLibraryService extends ChangeNotifier {
           continue;
         }
         
+        // 创建音乐文件对象
         final musicFile = await MusicFile.fromPath(filePath);
+        
+        // 检查ID是否已存在
+        if (existingIds.containsKey(musicFile.id)) {
+          debugPrint('音乐ID已存在，跳过: ${musicFile.id} (${musicFile.filePath})');
+          skippedCount++;
+          continue;
+        }
+        
         newFiles.add(musicFile);
         
-        // 添加到现有路径Map，防止同一批导入中的重复
+        // 添加到现有路径和ID的Map，防止同一批导入中的重复
         existingPaths[normalizedPath] = true;
+        existingIds[musicFile.id] = true;
         
+        // 输出调试信息
+        debugPrint('成功导入: ${musicFile.title} - ${musicFile.artist}, ID: ${musicFile.id}');
         addedCount++;
       } catch (e) {
         debugPrint('处理音乐文件失败: $filePath - ${e.toString()}');
@@ -368,15 +383,46 @@ class MusicLibraryService extends ChangeNotifier {
   
   // 删除音乐文件
   Future<void> removeMusicFile(String id) async {
+    debugPrint('尝试删除音乐文件，ID: $id');
+    
+    // 查找要删除的音乐文件
+    MusicFile? musicFileToRemove;
+    for (var file in _musicFiles) {
+      if (file.id == id) {
+        musicFileToRemove = file;
+        break;
+      }
+    }
+    
+    // 输出要删除的文件信息
+    if (musicFileToRemove != null) {
+      debugPrint('删除音乐文件: ${musicFileToRemove.title} (${musicFileToRemove.filePath})');
+    }
+    
+    // 从列表中移除匹配ID的文件
+    final initialCount = _musicFiles.length;
     _musicFiles.removeWhere((file) => file.id == id);
+    final removedCount = initialCount - _musicFiles.length;
+    
+    // 保存更新后的音乐库
     await _saveMusicLibrary();
+    
+    // 输出删除结果
+    if (removedCount > 0) {
+      debugPrint('成功删除 $removedCount 个音乐文件，ID: $id');
+    } else {
+      debugPrint('找不到ID为 $id 的音乐文件，没有删除任何内容');
+    }
+    
     notifyListeners();
   }
   
   // 清空音乐库
   Future<void> clearLibrary() async {
+    debugPrint('清空音乐库，当前共有 ${_musicFiles.length} 首歌曲');
     _musicFiles = [];
     await _saveMusicLibrary();
+    debugPrint('音乐库已清空');
     notifyListeners();
   }
 
