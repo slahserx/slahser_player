@@ -4,7 +4,9 @@ import 'package:slahser_player/services/playlist_service.dart';
 import 'package:slahser_player/models/playlist.dart';
 import 'package:slahser_player/widgets/content/hover_widget.dart';
 import 'package:slahser_player/widgets/content/notifications.dart';
+import 'package:slahser_player/services/music_library_service.dart';
 import 'dart:math' as math;
+import 'dart:io';
 
 /// 播放列表视图组件
 class PlaylistsView extends StatefulWidget {
@@ -218,6 +220,8 @@ class _PlaylistsViewState extends State<PlaylistsView> {
   
   // 构建播放列表卡片
   Widget _buildPlaylistCard(BuildContext context, Playlist playlist, Color color) {
+    final coverImage = playlist.getCoverImage(Provider.of<MusicLibraryService>(context, listen: false).musicFiles);
+    
     return HoverWidget(
       builder: (context, isHovered) {
         return Card(
@@ -238,54 +242,143 @@ class _PlaylistsViewState extends State<PlaylistsView> {
                 // 播放列表封面
                 Expanded(
                   flex: 3,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: color.withOpacity(0.3),
-                    ),
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        // 播放列表图标或播放按钮
-                        isHovered 
-                          ? IconButton(
-                              onPressed: () {
-                                // 播放整个列表
-                                PlaylistSelectedNotification(playlist.id).dispatch(context);
-                              },
-                              icon: Icon(
-                                Icons.play_circle_fill,
-                                size: 48,
-                                color: color,
+                  child: coverImage != null
+                      ? Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            // 封面图片 - 修改为使用完整填充模式
+                            ClipRRect(
+                              child: Image.file(
+                                File(coverImage),
+                                fit: BoxFit.cover,
+                                width: double.infinity,
+                                height: double.infinity,
+                                errorBuilder: (context, error, stackTrace) {
+                                  // 加载失败时显示默认背景
+                                  return Container(
+                                    color: color.withOpacity(0.3),
+                                    child: Center(
+                                      child: Icon(
+                                        Icons.queue_music,
+                                        size: 48,
+                                        color: color,
+                                      ),
+                                    ),
+                                  );
+                                },
                               ),
-                            )
-                          : Icon(
-                              Icons.queue_music,
-                              size: 48,
-                              color: color,
                             ),
-                        // 歌曲数量徽章
-                        Positioned(
-                          right: 8,
-                          bottom: 8,
+                            // 半透明渐变遮罩
+                            Positioned.fill(
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                    colors: [
+                                      Colors.transparent,
+                                      Colors.black.withOpacity(0.3),
+                                    ],
+                                    stops: const [0.7, 1.0],
+                                  ),
+                                ),
+                              ),
+                            ),
+                            // 悬停时的播放按钮
+                            if (isHovered)
+                              Center(
+                                child: Container(
+                                  width: 64,
+                                  height: 64,
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withOpacity(0.5),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: IconButton(
+                                    onPressed: () {
+                                      // 播放整个列表
+                                      PlaylistSelectedNotification(playlist.id).dispatch(context);
+                                    },
+                                    icon: const Icon(
+                                      Icons.play_arrow,
+                                      size: 36,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            // 歌曲数量徽章
+                            Positioned(
+                              right: 8,
+                              bottom: 8,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withOpacity(0.6),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Text(
+                                  '${playlist.songPaths.length}首',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        )
+                      : ClipRRect(
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: color.withOpacity(0.7),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Text(
-                              '${playlist.songPaths.length}首',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                              ),
+                            color: color.withOpacity(0.3),
+                            width: double.infinity,
+                            height: double.infinity,
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                // 播放列表图标或播放按钮
+                                isHovered 
+                                  ? IconButton(
+                                      onPressed: () {
+                                        // 播放整个列表
+                                        PlaylistSelectedNotification(playlist.id).dispatch(context);
+                                      },
+                                      icon: Icon(
+                                        Icons.play_circle_fill,
+                                        size: 48,
+                                        color: color,
+                                      ),
+                                    )
+                                  : Icon(
+                                      Icons.queue_music,
+                                      size: 48,
+                                      color: color,
+                                    ),
+                                // 歌曲数量徽章
+                                Positioned(
+                                  right: 8,
+                                  bottom: 8,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: color.withOpacity(0.7),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: Text(
+                                      '${playlist.songPaths.length}首',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ),
-                      ],
-                    ),
-                  ),
                 ),
                 // 播放列表信息
                 Expanded(
