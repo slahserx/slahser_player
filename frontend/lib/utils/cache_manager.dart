@@ -19,10 +19,18 @@ class MusicCacheManager {
   String? _metadataCachePath;
   String? _lyricsCachePath;
   
+  // 内存缓存
+  final Map<String, List<int>> _coverMemoryCache = {};
+  final Map<String, Map<String, dynamic>> _metadataMemoryCache = {}; 
+  final Map<String, String> _lyricsMemoryCache = {};
+  
+  // 最大内存缓存条目
+  static const int _maxMemoryCacheItems = 100;
+  
   // 初始化缓存目录
   Future<void> initialize() async {
     try {
-      final tempDir = await getTemporaryDirectory();
+      final tempDir = await getApplicationDocumentsDirectory();
       _baseCachePath = '${tempDir.path}/slahser_player_cache';
       
       _coverCachePath = '$_baseCachePath/covers';
@@ -34,6 +42,9 @@ class MusicCacheManager {
       _createDirectory(_coverCachePath!);
       _createDirectory(_metadataCachePath!);
       _createDirectory(_lyricsCachePath!);
+      
+      // 清理过期缓存
+      _cleanExpiredCache();
       
       debugPrint('缓存管理器初始化完成，路径: $_baseCachePath');
     } catch (e) {
@@ -51,7 +62,7 @@ class MusicCacheManager {
   
   // 计算文件的哈希值，用作缓存键
   String getFileHash(String filePath) {
-    return md5.convert(utf8.encode(filePath)).toString();
+    return md5.convert(utf8.encode(filePath.toLowerCase())).toString();
   }
   
   // 获取文件的修改时间戳
@@ -75,6 +86,11 @@ class MusicCacheManager {
     
     try {
       final fileHash = getFileHash(filePath);
+      
+      // 添加到内存缓存
+      _coverMemoryCache[fileHash] = List<int>.from(imageData);
+      _limitMemoryCacheSize(_coverMemoryCache, _maxMemoryCacheItems);
+      
       final cacheFilePath = '$_coverCachePath/$fileHash.img';
       
       final cacheFile = File(cacheFilePath);
@@ -99,6 +115,12 @@ class MusicCacheManager {
     
     try {
       final fileHash = getFileHash(filePath);
+      
+      // 先从内存缓存中查找
+      if (_coverMemoryCache.containsKey(fileHash)) {
+        return List<int>.from(_coverMemoryCache[fileHash]!);
+      }
+      
       final cacheFilePath = '$_coverCachePath/$fileHash.img';
       final metaFilePath = '$_coverCachePath/$fileHash.meta';
       
@@ -113,6 +135,11 @@ class MusicCacheManager {
         
         if (cachedTimestamp == currentTimestamp) {
           final imageData = await cacheFile.readAsBytes();
+          
+          // 添加到内存缓存
+          _coverMemoryCache[fileHash] = List<int>.from(imageData);
+          _limitMemoryCacheSize(_coverMemoryCache, _maxMemoryCacheItems);
+          
           debugPrint('从缓存加载封面: $cacheFilePath, 大小: ${imageData.length}字节');
           return imageData;
         } else {
@@ -138,6 +165,10 @@ class MusicCacheManager {
       final fileHash = getFileHash(filePath);
       final cacheFilePath = '$_metadataCachePath/$fileHash.json';
       
+      // 添加到内存缓存
+      _metadataMemoryCache[fileHash] = Map<String, dynamic>.from(metadata);
+      _limitMemoryCacheSize(_metadataMemoryCache, _maxMemoryCacheItems);
+      
       final cacheFile = File(cacheFilePath);
       await cacheFile.writeAsString(jsonEncode(metadata));
       
@@ -160,6 +191,12 @@ class MusicCacheManager {
     
     try {
       final fileHash = getFileHash(filePath);
+      
+      // 先从内存缓存中查找
+      if (_metadataMemoryCache.containsKey(fileHash)) {
+        return Map<String, dynamic>.from(_metadataMemoryCache[fileHash]!);
+      }
+      
       final cacheFilePath = '$_metadataCachePath/$fileHash.json';
       final metaFilePath = '$_metadataCachePath/$fileHash.meta';
       
@@ -175,6 +212,11 @@ class MusicCacheManager {
         if (cachedTimestamp == currentTimestamp) {
           final metadataStr = await cacheFile.readAsString();
           final metadata = jsonDecode(metadataStr) as Map<String, dynamic>;
+          
+          // 添加到内存缓存
+          _metadataMemoryCache[fileHash] = Map<String, dynamic>.from(metadata);
+          _limitMemoryCacheSize(_metadataMemoryCache, _maxMemoryCacheItems);
+          
           debugPrint('从缓存加载元数据: $cacheFilePath');
           return metadata;
         } else {
@@ -200,6 +242,10 @@ class MusicCacheManager {
       final fileHash = getFileHash(filePath);
       final cacheFilePath = '$_lyricsCachePath/$fileHash.lrc';
       
+      // 添加到内存缓存
+      _lyricsMemoryCache[fileHash] = lyrics;
+      _limitMemoryCacheSize(_lyricsMemoryCache, _maxMemoryCacheItems);
+      
       final cacheFile = File(cacheFilePath);
       await cacheFile.writeAsString(lyrics);
       
@@ -217,12 +263,23 @@ class MusicCacheManager {
     
     try {
       final fileHash = getFileHash(filePath);
+      
+      // 先从内存缓存中查找
+      if (_lyricsMemoryCache.containsKey(fileHash)) {
+        return _lyricsMemoryCache[fileHash];
+      }
+      
       final cacheFilePath = '$_lyricsCachePath/$fileHash.lrc';
       
       final cacheFile = File(cacheFilePath);
       
       if (await cacheFile.exists()) {
         final lyrics = await cacheFile.readAsString();
+        
+        // 添加到内存缓存
+        _lyricsMemoryCache[fileHash] = lyrics;
+        _limitMemoryCacheSize(_lyricsMemoryCache, _maxMemoryCacheItems);
+        
         debugPrint('从缓存加载歌词: $cacheFilePath');
         return lyrics;
       }
@@ -237,37 +294,47 @@ class MusicCacheManager {
   Future<void> clearCache(CacheType type) async {
     if (_baseCachePath == null) await initialize();
     
-    String cachePath;
-    switch (type) {
-      case CacheType.cover:
-        cachePath = _coverCachePath!;
-        break;
-      case CacheType.metadata:
-        cachePath = _metadataCachePath!;
-        break;
-      case CacheType.lyrics:
-        cachePath = _lyricsCachePath!;
-        break;
-      case CacheType.all:
-        cachePath = _baseCachePath!;
-        break;
-    }
-    
     try {
-      final dir = Directory(cachePath);
-      if (await dir.exists()) {
-        await dir.delete(recursive: true);
-        debugPrint('缓存已清理: $cachePath');
-        
-        // 如果清理所有缓存，重新创建目录结构
-        if (type == CacheType.all) {
-          await initialize();
-        } else {
-          _createDirectory(cachePath);
-        }
+      switch (type) {
+        case CacheType.cover:
+          _coverMemoryCache.clear();
+          await _clearDirectory(_coverCachePath!);
+          break;
+        case CacheType.metadata:
+          _metadataMemoryCache.clear();
+          await _clearDirectory(_metadataCachePath!);
+          break;
+        case CacheType.lyrics:
+          _lyricsMemoryCache.clear();
+          await _clearDirectory(_lyricsCachePath!);
+          break;
+        case CacheType.all:
+          _coverMemoryCache.clear();
+          _metadataMemoryCache.clear();
+          _lyricsMemoryCache.clear();
+          await _clearDirectory(_baseCachePath!);
+          
+          // 重建目录结构
+          _createDirectory(_coverCachePath!);
+          _createDirectory(_metadataCachePath!);
+          _createDirectory(_lyricsCachePath!);
+          break;
       }
+      
+      debugPrint('缓存已清理: ${type.toString()}');
+      
     } catch (e) {
       debugPrint('清理缓存失败: $e');
+    }
+  }
+  
+  // 清空目录下的所有文件
+  Future<void> _clearDirectory(String dirPath) async {
+    final dir = Directory(dirPath);
+    if (await dir.exists()) {
+      await for (final entity in dir.list()) {
+        await entity.delete();
+      }
     }
   }
   
@@ -275,25 +342,34 @@ class MusicCacheManager {
   Future<int> getCacheSize(CacheType type) async {
     if (_baseCachePath == null) await initialize();
     
-    String cachePath;
-    switch (type) {
-      case CacheType.cover:
-        cachePath = _coverCachePath!;
-        break;
-      case CacheType.metadata:
-        cachePath = _metadataCachePath!;
-        break;
-      case CacheType.lyrics:
-        cachePath = _lyricsCachePath!;
-        break;
-      case CacheType.all:
-        cachePath = _baseCachePath!;
-        break;
-    }
-    
     int totalSize = 0;
     try {
-      final dir = Directory(cachePath);
+      switch (type) {
+        case CacheType.cover:
+          totalSize = await _getDirectorySize(_coverCachePath!);
+          break;
+        case CacheType.metadata:
+          totalSize = await _getDirectorySize(_metadataCachePath!);
+          break;
+        case CacheType.lyrics:
+          totalSize = await _getDirectorySize(_lyricsCachePath!);
+          break;
+        case CacheType.all:
+          totalSize = await _getDirectorySize(_baseCachePath!);
+          break;
+      }
+    } catch (e) {
+      debugPrint('获取缓存大小失败: $e');
+    }
+    
+    return totalSize;
+  }
+  
+  // 获取目录大小
+  Future<int> _getDirectorySize(String dirPath) async {
+    int totalSize = 0;
+    try {
+      final dir = Directory(dirPath);
       if (await dir.exists()) {
         await for (final entity in dir.list(recursive: true)) {
           if (entity is File) {
@@ -302,17 +378,65 @@ class MusicCacheManager {
         }
       }
     } catch (e) {
-      debugPrint('获取缓存大小失败: $e');
+      debugPrint('获取目录大小失败: $e');
     }
     
     return totalSize;
   }
+  
+  // 清理过期缓存
+  Future<void> _cleanExpiredCache() async {
+    try {
+      // 清理一周前的缓存
+      final oneWeekAgo = DateTime.now().subtract(const Duration(days: 7));
+      
+      await _cleanOldFilesInDirectory(_coverCachePath!, oneWeekAgo);
+      await _cleanOldFilesInDirectory(_metadataCachePath!, oneWeekAgo);
+      await _cleanOldFilesInDirectory(_lyricsCachePath!, oneWeekAgo);
+      
+      debugPrint('已清理过期缓存文件');
+    } catch (e) {
+      debugPrint('清理过期缓存失败: $e');
+    }
+  }
+  
+  // 清理目录中的旧文件
+  Future<void> _cleanOldFilesInDirectory(String dirPath, DateTime cutoffDate) async {
+    try {
+      final dir = Directory(dirPath);
+      if (await dir.exists()) {
+        await for (final entity in dir.list()) {
+          if (entity is File) {
+            final stat = await entity.stat();
+            if (stat.modified.isBefore(cutoffDate)) {
+              await entity.delete();
+            }
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('清理目录中的旧文件失败: $e');
+    }
+  }
+  
+  // 限制内存缓存大小
+  void _limitMemoryCacheSize<T>(Map<String, T> cache, int maxItems) {
+    if (cache.length > maxItems) {
+      // 移除最旧的条目 (简单实现：移除第一个键)
+      final keyToRemove = cache.keys.first;
+      cache.remove(keyToRemove);
+    }
+  }
 }
 
-// 缓存类型枚举
+/// 缓存类型枚举
 enum CacheType {
+  /// 封面缓存
   cover,
+  /// 元数据缓存
   metadata,
+  /// 歌词缓存
   lyrics,
+  /// 所有缓存
   all,
 } 

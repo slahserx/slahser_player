@@ -3,13 +3,16 @@ import 'package:window_manager/window_manager.dart';
 import 'package:provider/provider.dart';
 import 'package:slahser_player/widgets/player_controls.dart';
 import 'package:slahser_player/widgets/sidebar.dart';
-import 'package:slahser_player/widgets/content_area.dart';
+import 'package:slahser_player/widgets/content/content_area_wrapper.dart';
 import 'package:slahser_player/services/music_library_service.dart';
 import 'package:slahser_player/services/audio_player_service.dart';
 import 'package:slahser_player/services/settings_service.dart';
 import 'package:slahser_player/services/playlist_service.dart';
 import 'package:slahser_player/enums/content_type.dart';
 import 'dart:io' show exit;
+import 'package:slahser_player/widgets/content/notifications.dart';
+import 'package:slahser_player/pages/artist_detail_page.dart';
+import 'package:slahser_player/pages/album_detail_page.dart';
 
 // 鼠标悬停检测组件
 class HoverWidget extends StatefulWidget {
@@ -47,6 +50,13 @@ class _HomePageState extends State<HomePage> with WindowListener {
   
   // 存储当前选中的歌单ID
   String? _selectedPlaylistId;
+  
+  // 存储当前选中的艺术家名称
+  String? _selectedArtistName;
+  
+  // 存储当前选中的专辑信息
+  String? _selectedAlbumName;
+  String? _selectedAlbumArtist;
 
   @override
   void initState() {
@@ -100,6 +110,21 @@ class _HomePageState extends State<HomePage> with WindowListener {
     });
   }
 
+  void _handleArtistSelected(String artistName) {
+    setState(() {
+      _selectedContentType = ContentType.artistDetail;
+      _selectedArtistName = artistName;
+    });
+  }
+
+  void _handleAlbumSelected(String albumName, String artistName) {
+    setState(() {
+      _selectedContentType = ContentType.albumDetail;
+      _selectedAlbumName = albumName;
+      _selectedAlbumArtist = artistName;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -126,7 +151,7 @@ class _HomePageState extends State<HomePage> with WindowListener {
                           windowManager.startDragging();
                         },
                         child: Container(
-                          height: 40,
+                          height: 30,
                           color: Theme.of(context).colorScheme.surface,
                           child: Row(
                             children: [
@@ -177,12 +202,51 @@ class _HomePageState extends State<HomePage> with WindowListener {
                             _handlePlaylistSelected(notification.playlistId);
                             return true; // 阻止通知继续冒泡
                           },
-                          child: AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 300),
-                            child: ContentArea(
-                              key: ValueKey<ContentType>(_selectedContentType),
-                              selectedContentType: _selectedContentType,
-                              selectedPlaylistId: _selectedPlaylistId,
+                          child: NotificationListener<ArtistSelectedNotification>(
+                            onNotification: (notification) {
+                              // 处理艺术家选择通知
+                              _handleArtistSelected(notification.artistName);
+                              return true;
+                            },
+                            child: NotificationListener<AlbumSelectedNotification>(
+                              onNotification: (notification) {
+                                // 处理专辑选择通知
+                                _handleAlbumSelected(notification.albumName, notification.artistName);
+                                return true;
+                              },
+                              child: NotificationListener<ContentTypeChangedNotification>(
+                                onNotification: (notification) {
+                                  // 处理内容类型切换通知
+                                  setState(() {
+                                    _selectedContentType = notification.contentType;
+                                    // 如果不是歌单详情，清空选中的歌单ID
+                                    if (notification.contentType != ContentType.playlist) {
+                                      _selectedPlaylistId = null;
+                                    }
+                                    // 如果不是艺术家详情，清空选中的艺术家
+                                    if (notification.contentType != ContentType.artistDetail) {
+                                      _selectedArtistName = null;
+                                    }
+                                    // 如果不是专辑详情，清空选中的专辑
+                                    if (notification.contentType != ContentType.albumDetail) {
+                                      _selectedAlbumName = null;
+                                      _selectedAlbumArtist = null;
+                                    }
+                                  });
+                                  return true;
+                                },
+                                child: AnimatedSwitcher(
+                                  duration: const Duration(milliseconds: 300),
+                                  child: ContentAreaWrapper(
+                                    key: ValueKey<ContentType>(_selectedContentType),
+                                    selectedContentType: _selectedContentType,
+                                    selectedPlaylistId: _selectedPlaylistId,
+                                    selectedArtistName: _selectedArtistName,
+                                    selectedAlbumName: _selectedAlbumName,
+                                    selectedAlbumArtist: _selectedAlbumArtist,
+                                  ),
+                                ),
+                              ),
                             ),
                           ),
                         ),

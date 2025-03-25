@@ -957,6 +957,59 @@ class AudioPlayerService extends ChangeNotifier {
     await playMusic(songs[initialIndex]);
   }
   
+  /// 添加歌曲到播放队列的下一个位置
+  Future<void> playNext(MusicFile music) async {
+    if (_playlist.isEmpty) {
+      // 如果播放列表为空，直接播放
+      await setPlaylist([music], autoPlay: false);
+      await playMusic(music);
+      return;
+    }
+    
+    // 查找当前播放音乐在列表中的位置
+    int currentIndex = -1;
+    if (_currentMusic != null) {
+      currentIndex = _playlist.indexWhere((m) => m.id == _currentMusic!.id);
+    }
+    
+    // 如果在歌单中找不到当前音乐（可能被移除），或者没有当前音乐，添加到列表开头
+    if (currentIndex == -1) {
+      _playlist.insert(0, music);
+    } else {
+      // 添加到当前音乐之后
+      _playlist.insert(currentIndex + 1, music);
+    }
+    
+    // 更新原始播放列表
+    if (!_originalPlaylist.any((m) => m.id == music.id)) {
+      _originalPlaylist.add(music);
+    }
+    
+    debugPrint('已将歌曲"${music.title}"添加到下一首播放');
+    notifyListeners();
+  }
+  
+  /// 添加歌曲到播放队列末尾
+  Future<void> addToQueue(MusicFile music) async {
+    if (_playlist.isEmpty) {
+      // 如果播放列表为空，直接播放
+      await setPlaylist([music], autoPlay: false);
+      await playMusic(music);
+      return;
+    }
+    
+    // 添加到播放列表末尾
+    _playlist.add(music);
+    
+    // 更新原始播放列表
+    if (!_originalPlaylist.any((m) => m.id == music.id)) {
+      _originalPlaylist.add(music);
+    }
+    
+    debugPrint('已将歌曲"${music.title}"添加到播放队列');
+    notifyListeners();
+  }
+  
   // 清理资源
   @override
   Future<void> dispose() async {

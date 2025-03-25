@@ -42,81 +42,105 @@ class _PlaylistViewState extends State<PlaylistView> {
     final songs = playlistService.getPlaylistSongs(widget.playlist.id);
     
     return Container(
-      padding: const EdgeInsets.all(24),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // 歌单封面
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: Container(
-              width: 160,
-              height: 160,
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceVariant,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: Theme.of(context).colorScheme.outline.withOpacity(0.1),
-                  width: 1,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
-                    blurRadius: 4,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-                image: widget.playlist.getCoverImage(playlistService.allMusicFiles) != null
-                    ? DecorationImage(
-                        image: FileImage(File(widget.playlist.getCoverImage(playlistService.allMusicFiles)!)),
-                        fit: BoxFit.cover,
-                      )
-                    : null,
-              ),
-              child: widget.playlist.getCoverImage(playlistService.allMusicFiles) == null
-                  ? Center(
-                      child: Icon(
-                        Icons.music_note,
-                        size: 80,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.4),
-                      ),
-                    )
-                  : null,
-            ),
+      padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
           ),
-          const SizedBox(width: 24),
-          // 歌单信息
-          Expanded(
-            child: Column(
+        ],
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // 根据可用宽度决定布局方式
+          final isNarrow = constraints.maxWidth < 600;
+          
+          // 窄屏幕使用垂直布局，宽屏幕使用水平布局
+          if (isNarrow) {
+            return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  widget.playlist.name,
-                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
+                // 歌单封面（居中）
+                Center(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      width: 160,
+                      height: 160,
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.surfaceVariant,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: Theme.of(context).colorScheme.outline.withOpacity(0.1),
+                          width: 1,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.1),
+                            blurRadius: 4,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                        image: widget.playlist.getCoverImage(playlistService.allMusicFiles) != null
+                            ? DecorationImage(
+                                image: FileImage(File(widget.playlist.getCoverImage(playlistService.allMusicFiles)!)),
+                                fit: BoxFit.cover,
+                              )
+                            : null,
+                      ),
+                      child: widget.playlist.getCoverImage(playlistService.allMusicFiles) == null
+                          ? Center(
+                              child: Icon(
+                                Icons.music_note,
+                                size: 80,
+                                color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.4),
+                              ),
+                            )
+                          : null,
+                    ),
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 16),
+                // 歌单信息
+                Center(
+                  child: Text(
+                    widget.playlist.name,
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
                 if (widget.playlist.description.isNotEmpty) ...[
-                  Text(
-                    widget.playlist.description,
+                  const SizedBox(height: 8),
+                  Center(
+                    child: Text(
+                      widget.playlist.description,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 8),
+                Center(
+                  child: Text(
+                    '包含 ${songs.length} 首歌曲',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 8),
-                ],
-                Text(
-                  '包含 ${songs.length} 首歌曲',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                 ),
-                const SizedBox(height: 32),
+                const SizedBox(height: 16),
                 // 操作按钮
                 Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     ElevatedButton.icon(
                       icon: const Icon(Icons.play_arrow),
@@ -139,13 +163,19 @@ class _PlaylistViewState extends State<PlaylistView> {
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                       ),
                     ),
-                    const Spacer(),
-                    // 编辑和删除按钮
+                  ],
+                ),
+                const SizedBox(height: 8),
+                // 编辑删除按钮(居中)
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
                     IconButton(
                       icon: const Icon(Icons.edit),
                       tooltip: '编辑歌单',
                       onPressed: _showEditPlaylistDialog,
                     ),
+                    const SizedBox(width: 8),
                     IconButton(
                       icon: const Icon(Icons.delete),
                       tooltip: '删除歌单',
@@ -155,9 +185,129 @@ class _PlaylistViewState extends State<PlaylistView> {
                   ],
                 ),
               ],
-            ),
-          ),
-        ],
+            );
+          } else {
+            // 宽屏幕布局（水平）
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 歌单封面
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    width: 160,
+                    height: 160,
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.surfaceVariant,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: Theme.of(context).colorScheme.outline.withOpacity(0.1),
+                        width: 1,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.1),
+                          blurRadius: 4,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                      image: widget.playlist.getCoverImage(playlistService.allMusicFiles) != null
+                          ? DecorationImage(
+                              image: FileImage(File(widget.playlist.getCoverImage(playlistService.allMusicFiles)!)),
+                              fit: BoxFit.cover,
+                            )
+                          : null,
+                    ),
+                    child: widget.playlist.getCoverImage(playlistService.allMusicFiles) == null
+                        ? Center(
+                            child: Icon(
+                              Icons.music_note,
+                              size: 80,
+                              color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.4),
+                            ),
+                          )
+                        : null,
+                  ),
+                ),
+                const SizedBox(width: 24),
+                // 歌单信息
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        widget.playlist.name,
+                        style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 8),
+                      if (widget.playlist.description.isNotEmpty) ...[
+                        Text(
+                          widget.playlist.description,
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 8),
+                      ],
+                      Text(
+                        '包含 ${songs.length} 首歌曲',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      // 操作按钮
+                      Row(
+                        children: [
+                          ElevatedButton.icon(
+                            icon: const Icon(Icons.play_arrow),
+                            label: const Text('播放全部'),
+                            onPressed: songs.isEmpty ? null : _playAll,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Theme.of(context).colorScheme.primary,
+                              foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          ElevatedButton.icon(
+                            icon: const Icon(Icons.shuffle),
+                            label: const Text('随机播放'),
+                            onPressed: songs.isEmpty ? null : _shufflePlay,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
+                              foregroundColor: Theme.of(context).colorScheme.onSecondaryContainer,
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            ),
+                          ),
+                          const Spacer(),
+                          // 编辑和删除按钮
+                          IconButton(
+                            icon: const Icon(Icons.edit),
+                            tooltip: '编辑歌单',
+                            onPressed: _showEditPlaylistDialog,
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete),
+                            tooltip: '删除歌单',
+                            onPressed: _showDeletePlaylistDialog,
+                            color: Theme.of(context).colorScheme.error,
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            );
+          }
+        },
       ),
     );
   }

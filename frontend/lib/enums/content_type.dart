@@ -17,4 +17,10 @@ enum ContentType {
   
   /// 设置页面
   settings,
+  
+  /// 艺术家详情页
+  artistDetail,
+  
+  /// 专辑详情页
+  albumDetail,
 } 
