@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/gestures.dart';
 import 'package:provider/provider.dart';
 import 'package:slahser_player/services/music_library_service.dart';
 import 'package:slahser_player/services/audio_player_service.dart';
@@ -7,8 +6,9 @@ import 'package:slahser_player/models/music_file.dart';
 import 'dart:typed_data';
 import 'package:slahser_player/widgets/content/hover_widget.dart';
 import 'package:slahser_player/widgets/content/notifications.dart';
-import 'package:slahser_player/widgets/content/music_context_menu.dart';
 import '../../enums/playback_state.dart';
+import 'package:slahser_player/services/playlist_service.dart';
+import 'package:slahser_player/widgets/custom_snackbar.dart';
 
 /// 所有音乐视图组件
 class AllMusicView extends StatefulWidget {
@@ -224,28 +224,223 @@ class _AllMusicViewState extends State<AllMusicView> {
     }
   }
   
-  // 显示右键菜单
-  void _showContextMenu(BuildContext context, MusicFile music, TapDownDetails details) {
-    final RenderBox overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
-    final RenderBox itemBox = context.findRenderObject() as RenderBox;
-    final Offset localOffset = details.localPosition;
-    final Offset globalOffset = itemBox.localToGlobal(localOffset);
+  // 显示歌曲右键菜单
+  void _showSongContextMenu(BuildContext context, MusicFile music, RelativeRect position) {
+    final playlistService = Provider.of<PlaylistService>(context, listen: false);
     
-    // 如果菜单显示位置过于靠右，则向左移动
-    final double screenWidth = MediaQuery.of(context).size.width;
-    final double menuWidth = 280; // 菜单宽度
-    final double xOffset = globalOffset.dx + menuWidth > screenWidth 
-        ? screenWidth - menuWidth - 16 
-        : globalOffset.dx;
+    showMenu<String>(
+      context: context,
+      position: position,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+      ),
+      items: [
+        PopupMenuItem<String>(
+          value: 'play',
+          child: Row(
+            children: const [
+              Icon(Icons.play_arrow),
+              SizedBox(width: 8),
+              Text('播放'),
+            ],
+          ),
+        ),
+        PopupMenuItem<String>(
+          value: 'add_to_playlist',
+          child: Row(
+            children: const [
+              Icon(Icons.playlist_add),
+              SizedBox(width: 8),
+              Text('添加到歌单'),
+            ],
+          ),
+        ),
+        const PopupMenuDivider(),
+        PopupMenuItem<String>(
+          value: 'view_artist',
+          child: Row(
+            children: const [
+              Icon(Icons.person),
+              SizedBox(width: 8),
+              Text('查看艺术家'),
+            ],
+          ),
+        ),
+        PopupMenuItem<String>(
+          value: 'view_album',
+          child: Row(
+            children: const [
+              Icon(Icons.album),
+              SizedBox(width: 8),
+              Text('查看专辑'),
+            ],
+          ),
+        ),
+      ],
+    ).then((value) {
+      if (value == null) return;
+      
+      switch (value) {
+        case 'play':
+          _playSong(music);
+          break;
+        
+        case 'add_to_playlist':
+          _showAddToPlaylistDialog(music);
+          break;
+        
+        case 'view_artist':
+          if (music.artist.isNotEmpty && music.artist != '未知艺术家') {
+            ArtistSelectedNotification(music.artist).dispatch(context);
+          }
+          break;
+        
+        case 'view_album':
+          if (music.album.isNotEmpty && music.album != '未知专辑') {
+            AlbumSelectedNotification(music.album, music.artist).dispatch(context);
+          }
+          break;
+      }
+    });
+  }
+
+  // 显示添加到歌单对话框
+  void _showAddToPlaylistDialog(MusicFile music) {
+    final playlistService = Provider.of<PlaylistService>(context, listen: false);
+    final playlists = playlistService.playlists;
     
-    // 显示右键菜单
-    MusicContextMenu.show(
-      context,
-      music,
-      Offset(xOffset, globalOffset.dy),
+    if (playlists.isEmpty) {
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('添加到歌单'),
+          content: const Text('还没有创建任何歌单'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('取消'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                _showCreatePlaylistDialog(context, initialSongs: [music]);
+              },
+              child: const Text('新建歌单'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('添加到歌单'),
+        content: SizedBox(
+          width: 300,
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: playlists.length,
+            itemBuilder: (context, index) {
+              final playlist = playlists[index];
+              return ListTile(
+                leading: const Icon(Icons.queue_music),
+                title: Text(playlist.name),
+                subtitle: Text('${playlist.songPaths.length}首'),
+                onTap: () async {
+                  Navigator.of(context).pop();
+                  await playlistService.addSongToPlaylist(playlist.id, music);
+                  if (context.mounted) {
+                    CustomSnackBar.showSuccess(context, '已添加到歌单"${playlist.name}"');
+                  }
+                },
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('取消'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              _showCreatePlaylistDialog(context, initialSongs: [music]);
+            },
+            child: const Text('新建歌单'),
+          ),
+        ],
+      ),
     );
   }
-  
+
+  // 显示创建新播放列表对话框
+  void _showCreatePlaylistDialog(BuildContext context, {List<MusicFile>? initialSongs}) {
+    final nameController = TextEditingController();
+    final descriptionController = TextEditingController();
+    
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('创建新歌单'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  labelText: '歌单名称',
+                  hintText: '请输入歌单名称',
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: descriptionController,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  labelText: '歌单描述',
+                  hintText: '请输入歌单描述（可选）',
+                  alignLabelWithHint: true,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('取消'),
+            ),
+            TextButton(
+              onPressed: () async {
+                final name = nameController.text.trim();
+                final description = descriptionController.text.trim();
+                
+                if (name.isNotEmpty) {
+                  final playlistService = Provider.of<PlaylistService>(context, listen: false);
+                  final playlist = await playlistService.createPlaylist(name, description: description);
+                  
+                  if (initialSongs != null && initialSongs.isNotEmpty) {
+                    for (final song in initialSongs) {
+                      await playlistService.addSongToPlaylist(playlist.id, song);
+                    }
+                    CustomSnackBar.showSuccess(context, '已创建歌单并添加选中歌曲');
+                  }
+                  
+                  Navigator.of(context).pop();
+                }
+              },
+              child: const Text('创建'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final musicLibrary = Provider.of<MusicLibraryService>(context);
@@ -405,156 +600,147 @@ class _AllMusicViewState extends State<AllMusicView> {
                 padding: const EdgeInsets.only(bottom: 2),
                 child: HoverWidget(
                   builder: (context, isHovered) {
-                    return GestureDetector(
-                      // 添加长按和右键点击支持
-                      onSecondaryTapDown: (details) => _showContextMenu(context, music, details),
-                      onLongPress: () {
-                        // 在移动设备上使用长按触发上下文菜单
-                        final RenderBox box = context.findRenderObject() as RenderBox;
-                        final Offset position = box.localToGlobal(Offset.zero);
-                        _showContextMenu(
-                          context, 
-                          music, 
-                          TapDownDetails(
-                            globalPosition: Offset(position.dx + 40, position.dy + box.size.height / 2),
-                            localPosition: Offset(40, box.size.height / 2),
-                            kind: PointerDeviceKind.touch,
-                          ),
-                        );
-                      },
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: isCurrentSong
-                            ? Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3)
-                            : isHovered
-                                ? Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5)
-                                : Theme.of(context).colorScheme.surface,
+                    return Container(
+                      decoration: BoxDecoration(
+                        color: isCurrentSong
+                          ? Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3)
+                          : isHovered
+                              ? Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5)
+                              : Theme.of(context).colorScheme.surface,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: () => _playSong(music),
+                          onSecondaryTapUp: (details) {
+                            final RenderBox overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+                            final RelativeRect position = RelativeRect.fromRect(
+                              Rect.fromPoints(
+                                details.globalPosition,
+                                details.globalPosition,
+                              ),
+                              Offset.zero & overlay.size,
+                            );
+                            _showSongContextMenu(context, music, position);
+                          },
                           borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Material(
-                          color: Colors.transparent,
-                          child: InkWell(
-                            onTap: () {
-                              _playSong(music);
-                            },
-                            borderRadius: BorderRadius.circular(8),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 8),
-                              child: Row(
-                                children: [
-                                  // 序号
-                                  SizedBox(
-                                    width: 30,
-                                    child: Center(
-                                      child: isPlaying
-                                        ? Icon(
-                                            Icons.volume_up,
-                                            size: 16,
-                                            color: Theme.of(context).colorScheme.primary,
-                                          )
-                                        : Text(
-                                            '${index + 1}',
-                                            style: TextStyle(
-                                              fontSize: 14,
-                                              color: isCurrentSong
-                                                ? Theme.of(context).colorScheme.primary
-                                                : Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
-                                            ),
-                                          ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  // 封面图片
-                                  Container(
-                                    width: 40,
-                                    height: 40,
-                                    decoration: BoxDecoration(
-                                      color: Theme.of(context).colorScheme.surfaceVariant,
-                                      borderRadius: BorderRadius.circular(5),
-                                      boxShadow: isCurrentSong ? [
-                                        BoxShadow(
-                                          color: Theme.of(context).colorScheme.primary.withOpacity(0.4),
-                                          blurRadius: 8,
-                                          offset: const Offset(0, 2),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            child: Row(
+                              children: [
+                                // 序号
+                                SizedBox(
+                                  width: 30,
+                                  child: Center(
+                                    child: isPlaying
+                                      ? Icon(
+                                          Icons.volume_up,
+                                          size: 16,
+                                          color: Theme.of(context).colorScheme.primary,
                                         )
-                                      ] : null,
-                                    ),
-                                    clipBehavior: Clip.antiAlias,
-                                    child: _buildCoverImage(music, isCurrentSong),
+                                      : Text(
+                                          '${index + 1}',
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            color: isCurrentSong
+                                              ? Theme.of(context).colorScheme.primary
+                                              : Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+                                          ),
+                                        ),
                                   ),
-                                  const SizedBox(width: 16),
-                                  // 标题
-                                  Expanded(
-                                    flex: 3,
+                                ),
+                                const SizedBox(width: 8),
+                                // 封面图片
+                                Container(
+                                  width: 40,
+                                  height: 40,
+                                  decoration: BoxDecoration(
+                                    color: Theme.of(context).colorScheme.surfaceVariant,
+                                    borderRadius: BorderRadius.circular(5),
+                                    boxShadow: isCurrentSong ? [
+                                      BoxShadow(
+                                        color: Theme.of(context).colorScheme.primary.withOpacity(0.4),
+                                        blurRadius: 8,
+                                        offset: const Offset(0, 2),
+                                      )
+                                    ] : null,
+                                  ),
+                                  clipBehavior: Clip.antiAlias,
+                                  child: _buildCoverImage(music, isCurrentSong),
+                                ),
+                                const SizedBox(width: 16),
+                                // 标题
+                                Expanded(
+                                  flex: 3,
+                                  child: Text(
+                                    music.title,
+                                    style: TextStyle(
+                                      fontWeight: isCurrentSong ? FontWeight.bold : FontWeight.normal,
+                                      color: isCurrentSong
+                                        ? Theme.of(context).colorScheme.primary
+                                        : Theme.of(context).colorScheme.onSurface,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                // 艺术家
+                                Expanded(
+                                  flex: 2,
+                                  child: GestureDetector(
+                                    onTap: () {
+                                      // 导航到艺术家详情页
+                                      if (music.artist.isNotEmpty && music.artist != '未知艺术家') {
+                                        ArtistSelectedNotification(music.artist).dispatch(context);
+                                      }
+                                    },
                                     child: Text(
-                                      music.title,
+                                      music.artist,
                                       style: TextStyle(
-                                        fontWeight: isCurrentSong ? FontWeight.bold : FontWeight.normal,
-                                        color: isCurrentSong
+                                        color: music.artist.isNotEmpty && music.artist != '未知艺术家'
                                           ? Theme.of(context).colorScheme.primary
-                                          : Theme.of(context).colorScheme.onSurface,
+                                          : Theme.of(context).colorScheme.onSurface.withOpacity(0.8),
                                       ),
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                     ),
                                   ),
-                                  // 艺术家
-                                  Expanded(
-                                    flex: 2,
-                                    child: GestureDetector(
-                                      onTap: () {
-                                        // 导航到艺术家详情页
-                                        if (music.artist.isNotEmpty && music.artist != '未知艺术家') {
-                                          ArtistSelectedNotification(music.artist).dispatch(context);
-                                        }
-                                      },
-                                      child: Text(
-                                        music.artist,
-                                        style: TextStyle(
-                                          color: music.artist.isNotEmpty && music.artist != '未知艺术家'
-                                            ? Theme.of(context).colorScheme.primary
-                                            : Theme.of(context).colorScheme.onSurface.withOpacity(0.8),
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                  ),
-                                  // 专辑
-                                  Expanded(
-                                    flex: 2,
-                                    child: GestureDetector(
-                                      onTap: () {
-                                        // 导航到专辑详情页
-                                        if (music.album.isNotEmpty && music.album != '未知专辑') {
-                                          AlbumSelectedNotification(music.album, music.artist).dispatch(context);
-                                        }
-                                      },
-                                      child: Text(
-                                        music.album,
-                                        style: TextStyle(
-                                          color: music.album.isNotEmpty && music.album != '未知专辑'
-                                            ? Theme.of(context).colorScheme.primary
-                                            : Theme.of(context).colorScheme.onSurface.withOpacity(0.8),
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                  ),
-                                  // 时长
-                                  SizedBox(
-                                    width: 60,
+                                ),
+                                // 专辑
+                                Expanded(
+                                  flex: 2,
+                                  child: GestureDetector(
+                                    onTap: () {
+                                      // 导航到专辑详情页
+                                      if (music.album.isNotEmpty && music.album != '未知专辑') {
+                                        AlbumSelectedNotification(music.album, music.artist).dispatch(context);
+                                      }
+                                    },
                                     child: Text(
-                                      _formatDuration(music.duration),
+                                      music.album,
                                       style: TextStyle(
-                                        color: Theme.of(context).colorScheme.onSurface.withOpacity(0.8),
+                                        color: music.album.isNotEmpty && music.album != '未知专辑'
+                                          ? Theme.of(context).colorScheme.primary
+                                          : Theme.of(context).colorScheme.onSurface.withOpacity(0.8),
                                       ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
                                     ),
                                   ),
-                                  const SizedBox(width: 16),
-                                ],
-                              ),
+                                ),
+                                // 时长
+                                SizedBox(
+                                  width: 60,
+                                  child: Text(
+                                    _formatDuration(music.duration),
+                                    style: TextStyle(
+                                      color: Theme.of(context).colorScheme.onSurface.withOpacity(0.8),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+                              ],
                             ),
                           ),
                         ),

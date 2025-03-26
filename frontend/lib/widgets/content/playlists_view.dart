@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:slahser_player/services/playlist_service.dart';
+import 'package:slahser_player/services/audio_player_service.dart';
 import 'package:slahser_player/models/playlist.dart';
 import 'package:slahser_player/widgets/content/hover_widget.dart';
 import 'package:slahser_player/widgets/content/notifications.dart';
-import 'package:slahser_player/services/music_library_service.dart';
+import 'package:slahser_player/widgets/custom_snackbar.dart';
 import 'dart:math' as math;
 import 'dart:io';
 
@@ -19,6 +20,13 @@ class PlaylistsView extends StatefulWidget {
 class _PlaylistsViewState extends State<PlaylistsView> {
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _descriptionController = TextEditingController();
+  late final PlaylistService _playlistService;
+
+  @override
+  void initState() {
+    super.initState();
+    _playlistService = Provider.of<PlaylistService>(context, listen: false);
+  }
   
   @override
   void dispose() {
@@ -72,8 +80,7 @@ class _PlaylistsViewState extends State<PlaylistsView> {
                 
                 if (name.isNotEmpty) {
                   // 创建新播放列表
-                  final playlistService = Provider.of<PlaylistService>(context, listen: false);
-                  playlistService.createPlaylist(name, description: description);
+                  _playlistService.createPlaylist(name, description: description);
                   
                   // 关闭对话框
                   Navigator.of(context).pop();
@@ -105,8 +112,7 @@ class _PlaylistsViewState extends State<PlaylistsView> {
   
   @override
   Widget build(BuildContext context) {
-    final playlistService = Provider.of<PlaylistService>(context);
-    final playlists = playlistService.playlists;
+    final playlists = _playlistService.playlists;
     
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -220,90 +226,89 @@ class _PlaylistsViewState extends State<PlaylistsView> {
   
   // 构建播放列表卡片
   Widget _buildPlaylistCard(BuildContext context, Playlist playlist, Color color) {
-    final coverImage = playlist.getCoverImage(Provider.of<MusicLibraryService>(context, listen: false).musicFiles);
-    
     return HoverWidget(
       builder: (context, isHovered) {
-        return Card(
-          elevation: isHovered ? 4 : 1,
-          clipBehavior: Clip.antiAlias, // 防止内容溢出
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: InkWell(
-            onTap: () {
-              // 发送通知，切换到播放列表详情视图
-              PlaylistSelectedNotification(playlist.id).dispatch(context);
+        return MouseRegion(
+          cursor: SystemMouseCursors.click,
+          child: GestureDetector(
+            onSecondaryTapUp: (details) {
+              final RenderBox overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+              final RelativeRect position = RelativeRect.fromRect(
+                Rect.fromPoints(
+                  details.globalPosition,
+                  details.globalPosition,
+                ),
+                Offset.zero & overlay.size,
+              );
+              _showPlaylistContextMenu(context, playlist, position);
             },
-            borderRadius: BorderRadius.circular(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // 播放列表封面
-                Expanded(
-                  flex: 3,
-                  child: coverImage != null
-                      ? Stack(
+            child: Card(
+              elevation: isHovered ? 4 : 1,
+              clipBehavior: Clip.antiAlias,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: InkWell(
+                onTap: () {
+                  PlaylistSelectedNotification(playlist.id).dispatch(context);
+                },
+                borderRadius: BorderRadius.circular(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // 播放列表封面
+                    Expanded(
+                      flex: 3,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: color.withOpacity(0.3),
+                        ),
+                        child: Stack(
                           fit: StackFit.expand,
                           children: [
-                            // 封面图片 - 修改为使用完整填充模式
-                            ClipRRect(
-                              child: Image.file(
-                                File(coverImage),
+                            // 添加封面图片
+                            if (playlist.getCoverImage(_playlistService.allMusicFiles) != null)
+                              Image.file(
+                                File(playlist.getCoverImage(_playlistService.allMusicFiles)!),
                                 fit: BoxFit.cover,
-                                width: double.infinity,
-                                height: double.infinity,
-                                errorBuilder: (context, error, stackTrace) {
-                                  // 加载失败时显示默认背景
-                                  return Container(
-                                    color: color.withOpacity(0.3),
-                                    child: Center(
-                                      child: Icon(
-                                        Icons.queue_music,
-                                        size: 48,
-                                        color: color,
-                                      ),
-                                    ),
-                                  );
-                                },
-                              ),
-                            ),
-                            // 半透明渐变遮罩
-                            Positioned.fill(
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    begin: Alignment.topCenter,
-                                    end: Alignment.bottomCenter,
-                                    colors: [
-                                      Colors.transparent,
-                                      Colors.black.withOpacity(0.3),
-                                    ],
-                                    stops: const [0.7, 1.0],
+                                errorBuilder: (context, error, stackTrace) => Container(
+                                  color: color.withOpacity(0.3),
+                                  child: Icon(
+                                    Icons.music_note,
+                                    size: 48,
+                                    color: color,
                                   ),
                                 ),
+                              )
+                            else
+                              Container(
+                                color: color.withOpacity(0.3),
+                                child: Icon(
+                                  Icons.music_note,
+                                  size: 48,
+                                  color: color,
+                                ),
                               ),
-                            ),
-                            // 悬停时的播放按钮
+                            // 悬停时显示的播放按钮
                             if (isHovered)
-                              Center(
-                                child: Container(
-                                  width: 64,
-                                  height: 64,
-                                  decoration: BoxDecoration(
-                                    color: Colors.black.withOpacity(0.5),
-                                    shape: BoxShape.circle,
-                                  ),
+                              Container(
+                                color: Colors.black26,
+                                child: Center(
                                   child: IconButton(
                                     onPressed: () {
-                                      // 播放整个列表
-                                      PlaylistSelectedNotification(playlist.id).dispatch(context);
+                                      final songs = _playlistService.getPlaylistSongs(playlist.id);
+                                      if (songs.isEmpty) return;
+                                      
+                                      final audioPlayer = Provider.of<AudioPlayerService>(context, listen: false);
+                                      audioPlayer.setPlaylist(songs);
+                                      audioPlayer.playMusic(songs.first);
                                     },
-                                    icon: const Icon(
-                                      Icons.play_arrow,
-                                      size: 36,
+                                    icon: Icon(
+                                      Icons.play_circle_fill,
+                                      size: 48,
                                       color: Colors.white,
                                     ),
+                                    tooltip: '播放全部',
                                   ),
                                 ),
                               ),
@@ -314,7 +319,7 @@ class _PlaylistsViewState extends State<PlaylistsView> {
                               child: Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                 decoration: BoxDecoration(
-                                  color: Colors.black.withOpacity(0.6),
+                                  color: Colors.black45,
                                   borderRadius: BorderRadius.circular(12),
                                 ),
                                 child: Text(
@@ -328,102 +333,243 @@ class _PlaylistsViewState extends State<PlaylistsView> {
                               ),
                             ),
                           ],
-                        )
-                      : ClipRRect(
-                          child: Container(
-                            color: color.withOpacity(0.3),
-                            width: double.infinity,
-                            height: double.infinity,
-                            child: Stack(
-                              fit: StackFit.expand,
-                              children: [
-                                // 播放列表图标或播放按钮
-                                isHovered 
-                                  ? IconButton(
-                                      onPressed: () {
-                                        // 播放整个列表
-                                        PlaylistSelectedNotification(playlist.id).dispatch(context);
-                                      },
-                                      icon: Icon(
-                                        Icons.play_circle_fill,
-                                        size: 48,
-                                        color: color,
-                                      ),
-                                    )
-                                  : Icon(
-                                      Icons.queue_music,
-                                      size: 48,
-                                      color: color,
-                                    ),
-                                // 歌曲数量徽章
-                                Positioned(
-                                  right: 8,
-                                  bottom: 8,
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                    decoration: BoxDecoration(
-                                      color: color.withOpacity(0.7),
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    child: Text(
-                                      '${playlist.songPaths.length}首',
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
                         ),
-                ),
-                // 播放列表信息
-                Expanded(
-                  flex: 2,
-                  child: Padding(
-                    padding: const EdgeInsets.all(12.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // 播放列表名称
-                        Text(
-                          playlist.name,
-                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.bold,
-                              ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 4),
-                        // 播放列表描述
-                        Expanded(
-                          child: playlist.description.isNotEmpty
-                              ? Text(
-                                  playlist.description,
-                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                        color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
-                                      ),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                )
-                              : Text(
-                                  '无描述',
-                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                        color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
-                                        fontStyle: FontStyle.italic,
-                                      ),
-                                ),
-                        ),
-                      ],
+                      ),
                     ),
+                    // 播放列表信息
+                    Expanded(
+                      flex: 2,
+                      child: Padding(
+                        padding: const EdgeInsets.all(12.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // 播放列表名称
+                            Text(
+                              playlist.name,
+                              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 4),
+                            // 播放列表描述
+                            Expanded(
+                              child: playlist.description.isNotEmpty
+                                  ? Text(
+                                      playlist.description,
+                                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+                                          ),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    )
+                                  : Text(
+                                      '无描述',
+                                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+                                            fontStyle: FontStyle.italic,
+                                          ),
+                                    ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // 显示歌单右键菜单
+  void _showPlaylistContextMenu(BuildContext context, Playlist playlist, RelativeRect position) {
+    showMenu<String>(
+      context: context,
+      position: position,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+      ),
+      items: [
+        PopupMenuItem<String>(
+          value: 'play',
+          child: Row(
+            children: const [
+              Icon(Icons.play_arrow),
+              SizedBox(width: 8),
+              Text('播放全部'),
+            ],
+          ),
+        ),
+        PopupMenuItem<String>(
+          value: 'shuffle',
+          child: Row(
+            children: const [
+              Icon(Icons.shuffle),
+              SizedBox(width: 8),
+              Text('随机播放'),
+            ],
+          ),
+        ),
+        const PopupMenuDivider(),
+        PopupMenuItem<String>(
+          value: 'edit',
+          child: Row(
+            children: const [
+              Icon(Icons.edit),
+              SizedBox(width: 8),
+              Text('编辑歌单'),
+            ],
+          ),
+        ),
+        PopupMenuItem<String>(
+          value: 'delete',
+          child: Row(
+            children: const [
+              Icon(Icons.delete),
+              SizedBox(width: 8),
+              Text('删除歌单'),
+            ],
+          ),
+        ),
+      ],
+    ).then((value) {
+      if (value == null) return;
+      
+      switch (value) {
+        case 'play':
+          final songs = _playlistService.getPlaylistSongs(playlist.id);
+          if (songs.isEmpty) return;
+          final audioPlayer = Provider.of<AudioPlayerService>(context, listen: false);
+          audioPlayer.setPlaylist(songs);
+          audioPlayer.playMusic(songs.first);
+          break;
+        
+        case 'shuffle':
+          final songs = _playlistService.getPlaylistSongs(playlist.id);
+          if (songs.isEmpty) return;
+          final audioPlayer = Provider.of<AudioPlayerService>(context, listen: false);
+          audioPlayer.setPlaylist(songs, shuffle: true);
+          audioPlayer.playMusic(songs.first);
+          break;
+        
+        case 'edit':
+          _showEditPlaylistDialog(playlist);
+          break;
+        
+        case 'delete':
+          _showDeletePlaylistDialog(playlist);
+          break;
+      }
+    });
+  }
+
+  // 显示编辑歌单对话框
+  void _showEditPlaylistDialog(Playlist playlist) {
+    final nameController = TextEditingController(text: playlist.name);
+    final descriptionController = TextEditingController(text: playlist.description);
+    
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('编辑歌单'),
+          content: SizedBox(
+            width: 400,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameController,
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    labelText: '歌单名称',
+                    hintText: '请输入歌单名称',
                   ),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: descriptionController,
+                  decoration: const InputDecoration(
+                    labelText: '歌单描述',
+                    hintText: '请输入歌单描述（可选）',
+                  ),
+                  maxLines: 3,
                 ),
               ],
             ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('取消'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final name = nameController.text.trim();
+                final description = descriptionController.text.trim();
+                
+                if (name.isEmpty) {
+                  CustomSnackBar.showWarning(context, '歌单名称不能为空');
+                  return;
+                }
+                
+                // 检查是否有变化
+                final nameChanged = name != playlist.name;
+                final descriptionChanged = description != playlist.description;
+                
+                if (nameChanged || descriptionChanged) {
+                  // 使用updatePlaylist方法更新歌单信息
+                  _playlistService.updatePlaylist(
+                    playlist.id, 
+                    newName: nameChanged ? name : null,
+                    newDescription: descriptionChanged ? description : null
+                  );
+                  
+                  Navigator.of(context).pop();
+                  setState(() {});
+                } else {
+                  Navigator.of(context).pop();
+                }
+              },
+              child: const Text('保存'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // 显示删除歌单确认对话框
+  void _showDeletePlaylistDialog(Playlist playlist) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('删除歌单'),
+          content: Text('确定要删除歌单"${playlist.name}"吗？此操作不可撤销。'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('取消'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () {
+                Navigator.of(context).pop();
+                _playlistService.deletePlaylist(playlist.id);
+              },
+              child: const Text('删除'),
+            ),
+          ],
         );
       },
     );
