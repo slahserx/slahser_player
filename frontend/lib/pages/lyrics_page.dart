@@ -49,7 +49,7 @@ class LyricsPage extends StatefulWidget {
 class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMixin {
   bool _showLyricsControls = false;
   Timer? _hideControlsTimer;
-  double _fontSize = 16.0;
+  double _fontSize = 18.0;
   String? _fontFamily;
   final ScrollController _scrollController = ScrollController();
   List<LyricLine> _lyrics = [];
@@ -78,6 +78,7 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
   bool _isUsingOnlineLyrics = false;
   bool _isLoadingOnlineLyrics = false;
   String? _onlineLyrics;
+  bool _isWhiteColor = true;
   
   @override
   bool get wantKeepAlive => true; // 保持页面状态，避免重建
@@ -333,11 +334,73 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
       if (lyrics != null) {
         final lines = lyrics.split('\n');
         final parsedLyrics = <LyricLine>[];
+        final translationMap = <String, String>{};
+        final processedTimes = <String>{};
         
-        for (final line in lines) {
-          final lyricLine = _parseLyricLine(line);
-          if (lyricLine != null) {
-            parsedLyrics.add(lyricLine);
+        // 第一遍：收集所有翻译
+        for (int i = 0; i < lines.length; i++) {
+          final line = lines[i].trim();
+          if (line.isEmpty) continue;
+          
+          final timeTagMatch = RegExp(r'^\[(\d{2}):(\d{2})\.(\d{2,3})\](.*)$').firstMatch(line);
+          if (timeTagMatch != null) {
+            final minutes = timeTagMatch.group(1)!;
+            final seconds = timeTagMatch.group(2)!;
+            final millis = timeTagMatch.group(3)!;
+            final timeTag = '$minutes:$seconds.$millis';
+            final content = timeTagMatch.group(4)!.trim();
+            
+            // 检查下一行是否为翻译
+            if (i + 1 < lines.length) {
+              final nextLine = lines[i + 1].trim();
+              final nextTimeTagMatch = RegExp(r'^\[(\d{2}):(\d{2})\.(\d{2,3})\](.*)$').firstMatch(nextLine);
+              if (nextTimeTagMatch != null) {
+                final nextTimeTag = '${nextTimeTagMatch.group(1)}:${nextTimeTagMatch.group(2)}.${nextTimeTagMatch.group(3)}';
+                
+                if (timeTag == nextTimeTag) {
+                  final translation = nextTimeTagMatch.group(4)!.trim();
+                  if (translation.isNotEmpty && translation != content) {
+                    translationMap[timeTag] = translation;
+                    i++; // 跳过下一行，因为它是翻译
+                  }
+                }
+              }
+            }
+          }
+        }
+        
+        // 第二遍：解析原文并添加翻译，同时避免重复处理相同时间标签的行
+        for (int i = 0; i < lines.length; i++) {
+          final line = lines[i].trim();
+          if (line.isEmpty) continue;
+          
+          final timeTagMatch = RegExp(r'^\[(\d{2}):(\d{2})\.(\d{2,3})\](.*)$').firstMatch(line);
+          if (timeTagMatch != null) {
+            final minutes = int.parse(timeTagMatch.group(1)!);
+            final seconds = int.parse(timeTagMatch.group(2)!);
+            final millisStr = timeTagMatch.group(3)!;
+            final milliseconds = int.parse(millisStr.padRight(3, '0').substring(0, 3));
+            final timeTag = '${timeTagMatch.group(1)}:${timeTagMatch.group(2)}.${timeTagMatch.group(3)}';
+            
+            // 如果这个时间标签已经处理过，跳过
+            if (processedTimes.contains(timeTag)) continue;
+            processedTimes.add(timeTag);
+            
+            final content = timeTagMatch.group(4)!.trim();
+            if (content.isNotEmpty) {
+              final translation = translationMap[timeTag];
+              final lyricLine = LyricLine(
+                time: Duration(
+                  minutes: minutes,
+                  seconds: seconds,
+                  milliseconds: milliseconds,
+                ),
+                text: content,
+                translation: translation,
+              );
+              
+              parsedLyrics.add(lyricLine);
+            }
           }
         }
         
@@ -353,7 +416,6 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
               _isLoadingOnlineLyrics = false;
             });
           }
-          debugPrint('成功加载在线歌词: ${music.title}');
           return;
         }
       }
@@ -387,15 +449,18 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
   }
 
   LyricLine? _parseLyricLine(String line) {
-    // LRC格式: [mm:ss.xx]歌词内容
-    final RegExp timeTagRegex = RegExp(r'\[(\d{2}):(\d{2})\.(\d{2})\]');
+    if (line.trim().isEmpty) return null;
+
+    // 匹配时间标签 [mm:ss.xx] 或 [mm:ss.xxx]
+    final RegExp timeTagRegex = RegExp(r'^\[(\d{2}):(\d{2})\.(\d{2,3})\](.*)$');
     final match = timeTagRegex.firstMatch(line);
     
     if (match == null) return null;
     
     final minutes = int.parse(match.group(1)!);
     final seconds = int.parse(match.group(2)!);
-    final milliseconds = int.parse(match.group(3)!) * 10; // 转换为毫秒
+    final millisStr = match.group(3)!;
+    final milliseconds = int.parse(millisStr.padRight(3, '0').substring(0, 3));
     
     final time = Duration(
       minutes: minutes,
@@ -403,11 +468,51 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
       milliseconds: milliseconds,
     );
     
-    // 提取歌词内容
-    final text = line.substring(match.end).trim();
-    if (text.isEmpty) return null;
+    final content = match.group(4)!.trim();
+    if (content.isEmpty) return null;
+
+    // 检查是否包含翻译（使用多种分隔符）
+    String text = content;
+    String? translation;
     
-    return LyricLine(time: time, text: text);
+    // 如果内容中包含分隔符，说明这是一个带翻译的行
+    if (content.contains('//') || content.contains('【') || content.contains('|')) {
+      // 优先处理 // 分隔符
+      if (content.contains('//')) {
+        final parts = content.split('//');
+        if (parts.length >= 2) {
+          text = parts[0].trim();
+          translation = parts[1].trim();
+        }
+      }
+      // 其次处理 【】 分隔符
+      else if (content.contains('【')) {
+        final parts = content.split('【');
+        if (parts.length >= 2) {
+          text = parts[0].trim();
+          translation = parts[1].replaceAll('】', '').trim();
+        }
+      }
+      // 最后处理 | 分隔符
+      else if (content.contains('|')) {
+        final parts = content.split('|');
+        if (parts.length >= 2) {
+          text = parts[0].trim();
+          translation = parts[1].trim();
+        }
+      }
+    }
+    
+    // 如果翻译为空或与原文相同，则不设置翻译
+    if (translation != null && (translation.isEmpty || translation == text)) {
+      translation = null;
+    }
+    
+    return LyricLine(
+      time: time,
+      text: text,
+      translation: translation,
+    );
   }
 
   void _updateCurrentLine(Duration position) {
@@ -428,15 +533,49 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
       });
       
       // 滚动到当前行
-      if (_scrollController.hasClients) {
-        final itemHeight = 40.0 + (_fontSize - 16.0); // 估计每行高度
-        final offset = itemHeight * _currentLineIndex;
-        _scrollController.animateTo(
-          offset - 100, // 居中显示
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeInOut,
-        );
+      _scrollToCurrentLine(animate: true);
+    }
+  }
+
+  void _scrollToCurrentLine({bool animate = true}) {
+    if (!_scrollController.hasClients) return;
+
+    try {
+      // 获取ListView的渲染对象
+      final RenderBox? renderBox = _scrollController.position.context.storageContext.findRenderObject() as RenderBox?;
+      if (renderBox == null) return;
+
+      // 获取ListView的可视区域高度
+      final viewportHeight = renderBox.size.height;
+      
+      // 计算每行的基础高度
+      final baseItemHeight = 60.0;
+      
+      // 计算当前行之前所有行的总高度（包括padding）
+      final verticalPadding = (viewportHeight - baseItemHeight) / 2;
+      double totalOffset = verticalPadding;
+      
+      for (int i = 0; i < _currentLineIndex; i++) {
+        double lineHeight = baseItemHeight;
+        // 如果有翻译，增加额外高度
+        if (_lyrics[i].translation != null && _lyrics[i].translation!.isNotEmpty) {
+          lineHeight += 20.0;
+        }
+        totalOffset += lineHeight;
       }
+
+      // 执行滚动
+      if (animate) {
+        _scrollController.animateTo(
+          totalOffset,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOutCubic,
+        );
+      } else {
+        _scrollController.jumpTo(totalOffset);
+      }
+    } catch (e) {
+      debugPrint('滚动到当前行时出错: $e');
     }
   }
 
@@ -459,7 +598,14 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
     if (index < 0 || index >= _lyrics.length) return;
     
     final audioPlayer = Provider.of<AudioPlayerService>(context, listen: false);
+    // 设置当前行索引
+    setState(() {
+      _currentLineIndex = index;
+    });
+    // 跳转到对应时间
     audioPlayer.seekTo(_lyrics[index].time);
+    // 确保歌词滚动到中间
+    _scrollToCurrentLine(animate: true);
   }
 
   // 使用预先加载的颜色或异步提取
@@ -624,27 +770,6 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
                         ),
                       ),
                       
-                      // 添加歌词来源切换按钮
-                      Positioned(
-                        right: 90,
-                        bottom: 30,
-                        child: AnimatedOpacity(
-                          opacity: _showLyricsControls ? 1.0 : 0.0,
-                          duration: const Duration(milliseconds: 200),
-                          child: Tooltip(
-                            message: _isUsingOnlineLyrics ? '切换到本地歌词' : '切换到在线歌词',
-                            child: IconButton(
-                              icon: Icon(
-                                _isUsingOnlineLyrics ? Icons.cloud : Icons.storage,
-                                color: Colors.white,
-                                size: 24,
-                              ),
-                              onPressed: _toggleLyricsSource,
-                            ),
-                          ),
-                        ),
-                      ),
-                      
                       // 添加加载指示器
                       if (_isLoadingOnlineLyrics)
                         const Center(
@@ -670,11 +795,12 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
     {Key? key}
   ) {
     final isPlaying = audioPlayer.playbackState == PlaybackState.playing;
+    final textColor = _isWhiteColor ? Colors.white : Colors.black;
 
     return Container(
       key: key,
       width: double.infinity,
-      height: double.infinity, // 填满整个高度
+      height: double.infinity,
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.1),
         border: Border(
@@ -684,22 +810,20 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
         ),
       ),
       child: SingleChildScrollView(
-        physics: const BouncingScrollPhysics(), // 添加更平滑的滚动效果
+        physics: const BouncingScrollPhysics(),
         child: ConstrainedBox(
           constraints: BoxConstraints(
-            minHeight: MediaQuery.of(context).size.height, // 确保内容至少和屏幕一样高
+            minHeight: MediaQuery.of(context).size.height,
           ),
           child: IntrinsicHeight(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 20),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.center,
-                mainAxisAlignment: MainAxisAlignment.spaceBetween, // 在空间中均匀分布元素
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  // 上部留白
                   const SizedBox(height: 10),
                   
-                  // 封面 - 简化容器结构，减少不必要的重建
                   Container(
                     width: 320,
                     height: 320,
@@ -713,23 +837,21 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
                         ),
                       ],
                     ),
-                    // 封面图片内容 - 通过key确保在状态更新时保持稳定
                     child: _buildCover(music),
                   ),
                   
-                  // 歌曲信息 - 使用固定高度容器确保布局稳定
                   Container(
-                    height: 120, // 固定高度，适合显示两行标题和单行艺术家/专辑信息
+                    height: 120,
                     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                     child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center, // 居中显示内容
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Flexible(
                           child: Text(
                             music.title,
                             style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                                   fontWeight: FontWeight.bold,
-                                  color: Colors.white,
+                                  color: textColor,
                                 ),
                             textAlign: TextAlign.center,
                             maxLines: 2,
@@ -740,7 +862,7 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
                         Text(
                           music.artist,
                           style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                color: Colors.white.withOpacity(0.9),
+                                color: textColor.withOpacity(0.9),
                               ),
                           textAlign: TextAlign.center,
                           maxLines: 1,
@@ -750,7 +872,7 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
                         Text(
                           music.album,
                           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                color: Colors.white.withOpacity(0.7),
+                                color: textColor.withOpacity(0.7),
                               ),
                           textAlign: TextAlign.center,
                           maxLines: 1,
@@ -760,16 +882,13 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
                     ),
                   ),
                   
-                  // 控制部分 (播放控制和进度条) - 使用ValueKey防止不必要的重建
-                  // 使用固定高度容器确保布局稳定
                   Container(
-                    height: 120, // 固定高度，足够容纳播放控件和进度条
-                    padding: EdgeInsets.zero, // 移除内边距简化布局
+                    height: 120,
+                    padding: EdgeInsets.zero,
                     key: ValueKey('controls-${music.id}'),
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        // 播放控制
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
@@ -781,6 +900,7 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
                               onPressed: () {
                                 audioPlayer.previous();
                               },
+                              color: textColor,
                             ),
                             const SizedBox(width: 16),
                             StreamBuilder<PlaybackState>(
@@ -796,6 +916,7 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
                                   onPressed: () {
                                     audioPlayer.playOrPause();
                                   },
+                                  color: textColor,
                                 );
                               }
                             ),
@@ -808,11 +929,11 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
                               onPressed: () {
                                 audioPlayer.next();
                               },
+                              color: textColor,
                             ),
                           ],
                         ),
                         const SizedBox(height: 20),
-                        // 进度条
                         SizedBox(
                           width: 320,
                           child: Row(
@@ -820,7 +941,7 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
                               Text(
                                 AudioPlayerService.formatDuration(position),
                                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                      color: Colors.white.withOpacity(0.7),
+                                      color: textColor.withOpacity(0.7),
                                     ),
                               ),
                               const SizedBox(width: 8),
@@ -835,10 +956,10 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
                                     overlayShape: const RoundSliderOverlayShape(
                                       overlayRadius: 8.0,
                                     ),
-                                    activeTrackColor: Colors.white.withOpacity(0.8),
-                                    inactiveTrackColor: Colors.white.withOpacity(0.3),
-                                    thumbColor: Colors.white,
-                                    overlayColor: Colors.white.withOpacity(0.2),
+                                    activeTrackColor: textColor.withOpacity(0.8),
+                                    inactiveTrackColor: textColor.withOpacity(0.3),
+                                    thumbColor: textColor,
+                                    overlayColor: textColor.withOpacity(0.2),
                                   ),
                                   child: Slider(
                                     value: math.min(position.inMilliseconds.toDouble(), 
@@ -854,7 +975,7 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
                               Text(
                                 AudioPlayerService.formatDuration(duration),
                                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                      color: Colors.white.withOpacity(0.7),
+                                      color: textColor.withOpacity(0.7),
                                     ),
                               ),
                             ],
@@ -864,7 +985,6 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
                     ),
                   ),
                   
-                  // 底部留白
                   const SizedBox(height: 10),
                 ],
               ),
@@ -991,114 +1111,186 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
     );
   }
 
-  Widget _buildLyrics(
-    BuildContext context, 
-    AudioPlayerService audioPlayer,
-    {Key? key}
-  ) {
+  Widget _buildLyricLine(LyricLine lyric, bool isCurrentLine, bool isHovered) {
+    final textColor = _isWhiteColor ? Colors.white : Colors.black;
+    
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      decoration: BoxDecoration(
+        color: isHovered ? (_isWhiteColor ? Colors.white.withOpacity(0.1) : Colors.black.withOpacity(0.1)) : Colors.transparent,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // 原文歌词
+          Text(
+            lyric.text,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: isCurrentLine ? _fontSize + 2 : _fontSize,
+              fontWeight: isCurrentLine ? FontWeight.bold : FontWeight.normal,
+              color: isCurrentLine 
+                  ? textColor
+                  : textColor.withOpacity(0.4), // 降低未播放歌词的透明度
+              letterSpacing: isCurrentLine ? 0.5 : 0,
+              fontFamily: _fontFamily,
+            ),
+          ),
+          // 翻译歌词
+          if (lyric.translation != null && lyric.translation!.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                lyric.translation!,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: isCurrentLine ? _fontSize - 2 : _fontSize - 4,
+                  color: isCurrentLine 
+                      ? textColor.withOpacity(0.8)
+                      : textColor.withOpacity(0.3), // 降低未播放翻译的透明度
+                  fontFamily: _fontFamily,
+                  fontWeight: FontWeight.normal,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLyrics(BuildContext context, AudioPlayerService audioPlayer, {Key? key}) {
     if (_lyrics.isEmpty) {
       return Center(
         key: key,
-        child: const CircularProgressIndicator(
-          color: Colors.white,
+        child: CircularProgressIndicator(
+          color: _isWhiteColor ? Colors.white : Colors.black,
         ),
       );
     }
-    
+
+    // 计算固定位置
+    final screenHeight = MediaQuery.of(context).size.height;
+    final itemHeight = 60.0; // 基础行高
+    final visibleItemCount = (screenHeight * 0.7) ~/ itemHeight;
+    final centerIndex = visibleItemCount ~/ 2;
+
     return Stack(
       key: key,
       children: [
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 60),
+          padding: const EdgeInsets.symmetric(horizontal: 40),
           margin: const EdgeInsets.all(16),
-          child: ListView.builder(
-            controller: _scrollController,
-            itemCount: _lyrics.length,
-            itemBuilder: (context, index) {
-              final isCurrentLine = index == _currentLineIndex;
-              
-              return HoverWidget(
-                builder: (context, isHovered) {
-                  return GestureDetector(
-                    onTap: () => _seekToLyricLine(index),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      margin: const EdgeInsets.symmetric(vertical: 4),
-                      decoration: BoxDecoration(
-                        color: isCurrentLine 
-                            ? Colors.white.withOpacity(0.2)
-                            : Colors.transparent,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        _lyrics[index].text,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: isCurrentLine ? _fontSize + 2 : _fontSize,
-                          fontWeight: isCurrentLine ? FontWeight.bold : FontWeight.normal,
-                          color: isCurrentLine 
-                              ? Colors.white
-                              : Colors.white.withOpacity(0.7),
-                          letterSpacing: isCurrentLine ? 0.5 : 0,
-                          fontFamily: _fontFamily,
-                        ),
-                      ),
-                    ),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.7,
+              ),
+              child: ListView.builder(
+                controller: _scrollController,
+                itemCount: _lyrics.length,
+                padding: EdgeInsets.symmetric(
+                  vertical: (screenHeight * 0.7 - itemHeight) / 2,
+                ),
+                itemBuilder: (context, index) {
+                  final isCurrentLine = index == _currentLineIndex;
+                  final lyric = _lyrics[index];
+                  
+                  return HoverWidget(
+                    builder: (context, isHovered) {
+                      return GestureDetector(
+                        onTap: () => _seekToLyricLine(index),
+                        child: _buildLyricLine(lyric, isCurrentLine, isHovered),
+                      );
+                    },
                   );
                 },
-              );
-            },
+              ),
+            ),
           ),
         ),
         
-        // 添加右下角的字体大小调整按钮
+        // 修改控制按钮布局
         Positioned(
           right: 30,
           bottom: 30,
           child: AnimatedOpacity(
             opacity: _showLyricsControls ? 1.0 : 0.0,
             duration: const Duration(milliseconds: 200),
-            child: PopupMenuButton<double>(
-              tooltip: '调整字体大小',
-              icon: const Icon(
-                Icons.text_fields,
-                color: Colors.white,
-                size: 24,
-              ),
-              offset: const Offset(0, -200),
-              color: Colors.black.withOpacity(0.7),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              itemBuilder: (context) => [
-                PopupMenuItem(
-                  value: -2.0,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.text_decrease, color: Colors.white),
-                      const SizedBox(width: 10),
-                      Text('减小字体', style: TextStyle(color: Colors.white)),
-                    ],
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // 歌词来源切换按钮
+                IconButton(
+                  icon: Icon(
+                    _isUsingOnlineLyrics ? Icons.cloud : Icons.storage,
+                    color: _isWhiteColor ? Colors.white : Colors.black,
+                    size: 24,
                   ),
+                  tooltip: _isUsingOnlineLyrics ? '切换到本地歌词' : '切换到在线歌词',
+                  onPressed: _toggleLyricsSource,
                 ),
-                PopupMenuItem(
-                  value: 2.0,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.text_increase, color: Colors.white),
-                      const SizedBox(width: 10),
-                      Text('增大字体', style: TextStyle(color: Colors.white)),
-                    ],
+                const SizedBox(width: 16),
+                // 颜色切换按钮
+                IconButton(
+                  icon: Icon(
+                    _isWhiteColor ? Icons.brightness_7 : Icons.brightness_2,
+                    color: _isWhiteColor ? Colors.white : Colors.black,
+                    size: 24,
                   ),
+                  tooltip: '切换歌词颜色',
+                  onPressed: () {
+                    setState(() {
+                      _isWhiteColor = !_isWhiteColor;
+                    });
+                  },
+                ),
+                const SizedBox(width: 16),
+                // 字体大小调整按钮
+                PopupMenuButton<double>(
+                  tooltip: '调整字体大小',
+                  icon: Icon(
+                    Icons.text_fields,
+                    color: _isWhiteColor ? Colors.white : Colors.black,
+                    size: 24,
+                  ),
+                  offset: const Offset(0, -200),
+                  color: Colors.black.withOpacity(0.7),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  itemBuilder: (context) => [
+                    PopupMenuItem(
+                      value: -2.0,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.text_decrease, color: Colors.white),
+                          const SizedBox(width: 10),
+                          Text('减小字体', style: TextStyle(color: Colors.white)),
+                        ],
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 2.0,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.text_increase, color: Colors.white),
+                          const SizedBox(width: 10),
+                          Text('增大字体', style: TextStyle(color: Colors.white)),
+                        ],
+                      ),
+                    ),
+                  ],
+                  onSelected: (value) {
+                    setState(() {
+                      _fontSize = (_fontSize + value).clamp(14.0, 34.0);
+                    });
+                  },
                 ),
               ],
-              onSelected: (value) {
-                setState(() {
-                  _fontSize = (_fontSize + value).clamp(12.0, 32.0);
-                });
-              },
             ),
           ),
         ),
@@ -1112,6 +1304,7 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
     required double size,
     required String tooltip,
     required VoidCallback onPressed,
+    required Color color,
   }) {
     return MouseRegion(
       cursor: SystemMouseCursors.click,
@@ -1123,11 +1316,11 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
             onTap: onPressed,
             borderRadius: BorderRadius.circular(size / 2),
             splashColor: Colors.transparent,
-            hoverColor: Colors.white.withOpacity(0.1),
+            hoverColor: color.withOpacity(0.1),
             child: Icon(
               icon,
               size: size,
-              color: Colors.white,
+              color: color,
             ),
           ),
         ),
@@ -1138,7 +1331,7 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
   // 更新字体设置
   void _updateFontSettings() {
     setState(() {
-      _fontSize = _settingsService.settings.fontFamily == 'System Default' ? 16.0 : 16.0; // 默认字体大小
+      _fontSize = _settingsService.settings.fontFamily == 'System Default' ? 18.0 : 18.0; // 修改默认字体大小
       _fontFamily = _settingsService.settings.fontFamily == 'System Default' ? null : _settingsService.settings.fontFamily;
     });
   }
@@ -1346,6 +1539,16 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
 class LyricLine {
   final Duration time;
   final String text;
+  final String? translation;
   
-  LyricLine({required this.time, required this.text});
+  const LyricLine({
+    required this.time, 
+    required this.text, 
+    this.translation,
+  });
+
+  @override
+  String toString() {
+    return 'LyricLine(time: $time, text: $text, translation: $translation)';
+  }
 } 
