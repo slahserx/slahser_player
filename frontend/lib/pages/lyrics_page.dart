@@ -10,6 +10,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'package:slahser_player/services/settings_service.dart';
 import 'package:palette_generator/palette_generator.dart';
+import 'package:slahser_player/services/online_lyrics_service.dart';
 
 // 鼠标悬停检测组件
 class HoverWidget extends StatefulWidget {
@@ -72,6 +73,11 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
   
   // 添加封面图片组件缓存，避免重复构建带来的闪烁
   final Map<String?, Widget> _coverWidgetCache = {};
+  
+  // 添加歌词来源状态
+  bool _isUsingOnlineLyrics = false;
+  bool _isLoadingOnlineLyrics = false;
+  String? _onlineLyrics;
   
   @override
   bool get wantKeepAlive => true; // 保持页面状态，避免重建
@@ -191,6 +197,8 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
       setState(() {
         _lyrics = [];
         _currentLineIndex = 0;
+        _onlineLyrics = null;
+        _isUsingOnlineLyrics = false;
       });
     } else if (_lyrics.isNotEmpty && _lyrics.first.text != '暂无歌词' && _lyrics.first.text != '读取歌词失败') {
       // 如果已经加载了当前歌曲的正确歌词，则不需要重新加载
@@ -200,6 +208,11 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
     debugPrint('开始加载歌词: ${music.title}, ID: ${music.id}');
     
     try {
+      if (_isUsingOnlineLyrics) {
+        await _loadOnlineLyrics(music);
+        return;
+      }
+
       // 首先尝试加载外部歌词文件
       if (music.lyricsPath != null) {
         final file = File(music.lyricsPath!);
@@ -293,14 +306,8 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
         }
       }
 
-      // 所有方法都失败，显示无歌词信息
-      if (mounted) {
-        setState(() {
-          _lyrics = [LyricLine(time: Duration.zero, text: '暂无歌词')];
-          _currentLineIndex = 0;
-        });
-      }
-      debugPrint('未找到歌词: ${music.title}');
+      // 所有本地方法都失败，尝试加载在线歌词
+      await _loadOnlineLyrics(music);
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -310,6 +317,73 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
       }
       debugPrint('读取歌词失败: ${music.title}, 错误: $e');
     }
+  }
+
+  Future<void> _loadOnlineLyrics(MusicFile music) async {
+    if (!mounted) return;
+    
+    setState(() {
+      _isLoadingOnlineLyrics = true;
+      _lyrics = [LyricLine(time: Duration.zero, text: '正在搜索在线歌词...')];
+    });
+    
+    try {
+      final lyrics = await OnlineLyricsService.searchAndGetLyrics(music.title, music.artist);
+      
+      if (lyrics != null) {
+        final lines = lyrics.split('\n');
+        final parsedLyrics = <LyricLine>[];
+        
+        for (final line in lines) {
+          final lyricLine = _parseLyricLine(line);
+          if (lyricLine != null) {
+            parsedLyrics.add(lyricLine);
+          }
+        }
+        
+        if (parsedLyrics.isNotEmpty) {
+          parsedLyrics.sort((a, b) => a.time.compareTo(b.time));
+          
+          if (mounted) {
+            setState(() {
+              _lyrics = parsedLyrics;
+              _currentLineIndex = 0;
+              _onlineLyrics = lyrics;
+              _isUsingOnlineLyrics = true;
+              _isLoadingOnlineLyrics = false;
+            });
+          }
+          debugPrint('成功加载在线歌词: ${music.title}');
+          return;
+        }
+      }
+      
+      if (mounted) {
+        setState(() {
+          _lyrics = [LyricLine(time: Duration.zero, text: '未找到在线歌词')];
+          _isLoadingOnlineLyrics = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _lyrics = [LyricLine(time: Duration.zero, text: '加载在线歌词失败: $e')];
+          _isLoadingOnlineLyrics = false;
+        });
+      }
+      debugPrint('加载在线歌词失败: ${music.title}, 错误: $e');
+    }
+  }
+
+  void _toggleLyricsSource() async {
+    if (_currentDisplayedMusic == null) return;
+    
+    setState(() {
+      _isUsingOnlineLyrics = !_isUsingOnlineLyrics;
+      _lyrics = []; // 清空当前歌词
+    });
+    
+    await _loadLyrics(_currentDisplayedMusic!);
   }
 
   LyricLine? _parseLyricLine(String line) {
@@ -549,6 +623,33 @@ class _LyricsPageState extends State<LyricsPage> with AutomaticKeepAliveClientMi
                           ),
                         ),
                       ),
+                      
+                      // 添加歌词来源切换按钮
+                      Positioned(
+                        right: 90,
+                        bottom: 30,
+                        child: AnimatedOpacity(
+                          opacity: _showLyricsControls ? 1.0 : 0.0,
+                          duration: const Duration(milliseconds: 200),
+                          child: Tooltip(
+                            message: _isUsingOnlineLyrics ? '切换到本地歌词' : '切换到在线歌词',
+                            child: IconButton(
+                              icon: Icon(
+                                _isUsingOnlineLyrics ? Icons.cloud : Icons.storage,
+                                color: Colors.white,
+                                size: 24,
+                              ),
+                              onPressed: _toggleLyricsSource,
+                            ),
+                          ),
+                        ),
+                      ),
+                      
+                      // 添加加载指示器
+                      if (_isLoadingOnlineLyrics)
+                        const Center(
+                          child: CircularProgressIndicator(),
+                        ),
                     ],
                   );
                 },
