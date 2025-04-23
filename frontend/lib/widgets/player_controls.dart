@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 import 'package:slahser_player/services/audio_player_service.dart';
 import 'package:slahser_player/pages/lyrics_page.dart';
 import 'package:slahser_player/models/music_file.dart';
-import 'package:slahser_player/widgets/equalizer_dialog.dart';
 import 'package:slahser_player/utils/page_transitions.dart';
 import 'dart:io';
 import 'dart:math' as math;
@@ -334,15 +333,6 @@ class _PlayerControlsState extends State<PlayerControls> with SingleTickerProvid
                                         audioPlayer.next();
                                       },
                                     ),
-                                    _buildControlButton(
-                                      context,
-                                      icon: Icons.equalizer,
-                                      tooltip: '均衡器',
-                                      isActive: audioPlayer.isEqualizerEnabled,
-                                      onPressed: () {
-                                        _showEqualizerDialog(context);
-                                      },
-                                    ),
                                   ],
                                 ),
                                 // 进度条和时间显示
@@ -654,13 +644,6 @@ class _PlayerControlsState extends State<PlayerControls> with SingleTickerProvid
           ),
         ),
       ),
-    );
-  }
-  
-  void _showEqualizerDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (context) => const EqualizerDialog(),
     );
   }
 

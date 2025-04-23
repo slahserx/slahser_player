@@ -257,6 +257,17 @@ class _AllMusicViewState extends State<AllMusicView> {
         ),
         const PopupMenuDivider(),
         PopupMenuItem<String>(
+          value: 'open_location',
+          child: Row(
+            children: const [
+              Icon(Icons.folder_open),
+              SizedBox(width: 8),
+              Text('查看文件所在位置'),
+            ],
+          ),
+        ),
+        const PopupMenuDivider(),
+        PopupMenuItem<String>(
           value: 'view_artist',
           child: Row(
             children: const [
@@ -287,6 +298,10 @@ class _AllMusicViewState extends State<AllMusicView> {
         
         case 'add_to_playlist':
           _showAddToPlaylistDialog(music);
+          break;
+        
+        case 'open_location':
+          _openFileLocation(music);
           break;
         
         case 'view_artist':
@@ -506,10 +521,31 @@ class _AllMusicViewState extends State<AllMusicView> {
             ),
             const SizedBox(height: 8),
             Text(
-              '点击左侧"导入音乐"按钮添加歌曲',
+              '点击下方按钮添加歌曲',
               style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                     color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.7),
                   ),
+            ),
+            const SizedBox(height: 24),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                ElevatedButton(
+                  onPressed: () => _importMusicFiles(context),
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  ),
+                  child: const Text('导入音乐文件'),
+                ),
+                const SizedBox(width: 16),
+                ElevatedButton(
+                  onPressed: () => _importMusicFolder(context),
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  ),
+                  child: const Text('导入音乐文件夹'),
+                ),
+              ],
             ),
           ],
         ),
@@ -519,6 +555,50 @@ class _AllMusicViewState extends State<AllMusicView> {
     // 构建音乐列表视图
     return Column(
       children: [
+        // 搜索栏和导入按钮
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              // 搜索栏
+              Expanded(
+                child: TextField(
+                  decoration: InputDecoration(
+                    hintText: '搜索音乐',
+                    prefixIcon: Icon(
+                      Icons.search,
+                      color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                    ),
+                    filled: true,
+                    fillColor: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(24),
+                      borderSide: BorderSide.none,
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 12,
+                    ),
+                  ),
+                ),
+              ),
+              // 导入音乐按钮
+              const SizedBox(width: 12),
+              IconButton.filled(
+                onPressed: () => _importMusicFiles(context),
+                icon: const Icon(Icons.audio_file),
+                tooltip: '导入音乐文件',
+              ),
+              // 导入文件夹按钮
+              const SizedBox(width: 8),
+              IconButton.filled(
+                onPressed: () => _importMusicFolder(context),
+                icon: const Icon(Icons.folder),
+                tooltip: '导入音乐文件夹',
+              ),
+            ],
+          ),
+        ),
         // 表头
         Container(
           margin: const EdgeInsets.symmetric(horizontal: 16),
@@ -761,5 +841,59 @@ class _AllMusicViewState extends State<AllMusicView> {
     final minutes = duration.inMinutes.remainder(60).toString().padLeft(2, '0');
     final seconds = duration.inSeconds.remainder(60).toString().padLeft(2, '0');
     return '$minutes:$seconds';
+  }
+
+  // 导入音乐文件
+  void _importMusicFiles(BuildContext context) async {
+    final musicLibrary = Provider.of<MusicLibraryService>(context, listen: false);
+    final result = await musicLibrary.importMusicFiles();
+    
+    if (context.mounted) {
+      if (result['success']) {
+        // 如果有跳过的文件，使用信息提示，否则使用成功提示
+        if (result['skipped'] > 0) {
+          CustomSnackBar.showInfo(context, result['message']);
+        } else {
+          CustomSnackBar.showSuccess(context, result['message']);
+        }
+      } else {
+        CustomSnackBar.showWarning(context, result['message']);
+      }
+    }
+  }
+  
+  // 导入音乐文件夹
+  void _importMusicFolder(BuildContext context) async {
+    final musicLibrary = Provider.of<MusicLibraryService>(context, listen: false);
+    final result = await musicLibrary.importMusicFolder();
+    
+    if (context.mounted) {
+      if (result['success']) {
+        // 如果有跳过的文件，使用信息提示，否则使用成功提示
+        if (result['skipped'] > 0) {
+          CustomSnackBar.showInfo(context, result['message']);
+        } else {
+          CustomSnackBar.showSuccess(context, result['message']);
+        }
+      } else {
+        CustomSnackBar.showWarning(context, result['message']);
+      }
+    }
+  }
+
+  // 打开文件所在位置
+  Future<void> _openFileLocation(MusicFile music) async {
+    final audioPlayerService = Provider.of<AudioPlayerService>(context, listen: false);
+    
+    final success = await audioPlayerService.openFileLocation(music);
+    
+    if (!success && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('无法打开文件所在位置'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
   }
 } 

@@ -23,4 +23,29 @@ enum ContentType {
   
   /// 专辑详情页
   albumDetail,
+  
+  /// 云音乐视图
+  cloudMusic,
+  
+  /// 云音乐设置 (已整合到settings中)
+  @Deprecated("使用settings代替")
+  cloudMusicSettings,
+  
+  /// 云音乐艺术家视图
+  cloudArtists,
+  
+  /// 云音乐专辑视图
+  cloudAlbums,
+  
+  /// 云音乐艺术家详情
+  cloudArtistDetail,
+  
+  /// 云音乐专辑详情
+  cloudAlbumDetail,
+  
+  /// 云音乐专辑列表
+  cloudAlbumList,
+  
+  /// 云音乐搜索结果
+  cloudSearchResult,
 } 

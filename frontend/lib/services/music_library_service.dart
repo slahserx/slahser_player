@@ -165,6 +165,34 @@ class MusicLibraryService extends ChangeNotifier {
     }
   }
   
+  // 获取特定类型的缓存大小
+  Future<String> getTypedCacheSize(CacheType type) async {
+    final size = await MusicCacheManager().getCacheSize(type);
+    
+    if (size < 1024 * 1024) {
+      return '${(size / 1024).toStringAsFixed(2)} KB';
+    } else {
+      return '${(size / (1024 * 1024)).toStringAsFixed(2)} MB';
+    }
+  }
+  
+  // 获取所有类型的缓存大小（Map形式）
+  Future<Map<CacheType, String>> getAllCacheSizes() async {
+    final result = <CacheType, String>{};
+    
+    // 获取所有类型的缓存大小
+    for (final type in CacheType.values) {
+      if (type != CacheType.all) {  // 排除"全部"类型
+        result[type] = await getTypedCacheSize(type);
+      }
+    }
+    
+    // 获取总缓存大小
+    result[CacheType.all] = await getCacheSize();
+    
+    return result;
+  }
+  
   // 导入音乐文件
   Future<Map<String, dynamic>> importMusicFiles() async {
     _isLoading = true;

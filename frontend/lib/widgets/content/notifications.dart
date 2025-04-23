@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:slahser_player/enums/content_type.dart';
 
-/// 定义一个自定义通知，用于告诉HomePage切换到特定歌单
+/// 歌单选择通知
 class PlaylistSelectedNotification extends Notification {
   /// 要选择的播放列表ID
   final String playlistId;
@@ -9,7 +9,7 @@ class PlaylistSelectedNotification extends Notification {
   PlaylistSelectedNotification(this.playlistId);
 }
 
-/// 定义一个自定义通知，用于告诉HomePage切换到特定艺术家页面
+/// 艺术家选择通知
 class ArtistSelectedNotification extends Notification {
   /// 要查看的艺术家名称
   final String artistName;
@@ -17,7 +17,7 @@ class ArtistSelectedNotification extends Notification {
   ArtistSelectedNotification(this.artistName);
 }
 
-/// 定义一个自定义通知，用于告诉HomePage切换到特定专辑页面
+/// 专辑选择通知
 class AlbumSelectedNotification extends Notification {
   /// 要查看的专辑名称
   final String albumName;
@@ -27,10 +27,29 @@ class AlbumSelectedNotification extends Notification {
   AlbumSelectedNotification(this.albumName, this.artistName);
 }
 
-/// 定义一个自定义通知，用于告诉HomePage切换内容类型
+/// 内容类型改变通知
 class ContentTypeChangedNotification extends Notification {
   /// 要切换到的内容类型
   final ContentType contentType;
   
   ContentTypeChangedNotification(this.contentType);
+}
+
+/// 云音乐艺术家选择通知
+class CloudArtistSelectedNotification extends Notification {
+  final String artistName;
+  final String artistId;
+  final bool isCloudContent = true;
+  
+  CloudArtistSelectedNotification(this.artistName, this.artistId);
+}
+
+/// 云音乐专辑选择通知
+class CloudAlbumSelectedNotification extends Notification {
+  final String albumName;
+  final String artistName;
+  final String albumId;
+  final bool isCloudContent = true;
+  
+  CloudAlbumSelectedNotification(this.albumName, this.artistName, this.albumId);
 } 

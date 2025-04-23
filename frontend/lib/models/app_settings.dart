@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 // 主题模式枚举
 enum AppThemeMode {
@@ -15,19 +14,7 @@ enum ThemeColor {
   purple,
   orange,
   red,
-}
-
-// 快捷键操作枚举
-enum ShortcutAction {
-  playPause,
-  next,
-  previous,
-  volumeUp,
-  volumeDown,
-  mute,
-  toggleRepeat,
-  toggleShuffle,
-  showLyrics,
+  custom, // 添加自定义颜色选项
 }
 
 // 应用设置模型
@@ -36,6 +23,7 @@ class AppSettings {
   AppThemeMode themeMode;
   ThemeColor themeColor;
   String fontFamily;
+  int customColor; // 自定义颜色的ARGB值
   
   // 播放设置
   bool enableFadeEffect;
@@ -44,35 +32,25 @@ class AppSettings {
   double volume; // 音量 0.0-1.0
   bool isMuted; // 是否静音
   
-  // 快捷键设置
-  Map<ShortcutAction, HotKey> shortcuts;
+  // 云音乐设置
+  bool enableCloudMusicPreBuffer; // 是否启用云音乐预缓冲
+  int preBufferCloudCount; // 预缓冲数量
+  String cloudMusicDownloadPath; // 云音乐下载路径
   
   AppSettings({
     this.themeMode = AppThemeMode.system,
     this.themeColor = ThemeColor.green,
     this.fontFamily = '微软雅黑',
+    this.customColor = 0xFF1DB954, // 默认使用绿色作为自定义颜色的初始值
     this.enableFadeEffect = true,
     this.fadeInDuration = 500,
     this.fadeOutDuration = 500,
     this.volume = 1.0,
     this.isMuted = false,
-    Map<ShortcutAction, HotKey>? shortcuts,
-  }) : shortcuts = shortcuts ?? _defaultShortcuts();
-  
-  // 默认快捷键设置
-  static Map<ShortcutAction, HotKey> _defaultShortcuts() {
-    return {
-      ShortcutAction.playPause: HotKey(LogicalKeyboardKey.space),
-      ShortcutAction.next: HotKey(LogicalKeyboardKey.arrowRight, ctrl: true),
-      ShortcutAction.previous: HotKey(LogicalKeyboardKey.arrowLeft, ctrl: true),
-      ShortcutAction.volumeUp: HotKey(LogicalKeyboardKey.arrowUp, ctrl: true),
-      ShortcutAction.volumeDown: HotKey(LogicalKeyboardKey.arrowDown, ctrl: true),
-      ShortcutAction.mute: HotKey(LogicalKeyboardKey.keyM, ctrl: true),
-      ShortcutAction.toggleRepeat: HotKey(LogicalKeyboardKey.keyR, ctrl: true),
-      ShortcutAction.toggleShuffle: HotKey(LogicalKeyboardKey.keyS, ctrl: true),
-      ShortcutAction.showLyrics: HotKey(LogicalKeyboardKey.keyL, ctrl: true),
-    };
-  }
+    this.enableCloudMusicPreBuffer = true,
+    this.preBufferCloudCount = 2,
+    this.cloudMusicDownloadPath = '', // 默认为空，表示使用默认临时目录
+  });
   
   // 从JSON创建设置
   factory AppSettings.fromJson(Map<String, dynamic> json) {
@@ -80,20 +58,15 @@ class AppSettings {
       themeMode: AppThemeMode.values[json['themeMode'] ?? 2],
       themeColor: ThemeColor.values[json['themeColor'] ?? 0],
       fontFamily: json['fontFamily'] ?? '微软雅黑',
+      customColor: json['customColor'] ?? 0xFF1DB954,
       enableFadeEffect: json['enableFadeEffect'] ?? true,
       fadeInDuration: json['fadeInDuration'] ?? 500,
       fadeOutDuration: json['fadeOutDuration'] ?? 500,
       volume: json['volume'] ?? 1.0,
       isMuted: json['isMuted'] ?? false,
-      shortcuts: (json['shortcuts'] as Map<String, dynamic>?)?.map(
-        (key, value) => MapEntry(
-          ShortcutAction.values.firstWhere(
-            (e) => e.toString() == key,
-            orElse: () => ShortcutAction.playPause,
-          ),
-          HotKey.fromJson(value),
-        ),
-      ) ?? _defaultShortcuts(),
+      enableCloudMusicPreBuffer: json['enableCloudMusicPreBuffer'] ?? true,
+      preBufferCloudCount: json['preBufferCloudCount'] ?? 2,
+      cloudMusicDownloadPath: json['cloudMusicDownloadPath'] ?? '',
     );
   }
   
@@ -103,14 +76,15 @@ class AppSettings {
       'themeMode': themeMode.index,
       'themeColor': themeColor.index,
       'fontFamily': fontFamily,
+      'customColor': customColor,
       'enableFadeEffect': enableFadeEffect,
       'fadeInDuration': fadeInDuration,
       'fadeOutDuration': fadeOutDuration,
       'volume': volume,
       'isMuted': isMuted,
-      'shortcuts': shortcuts.map(
-        (key, value) => MapEntry(key.toString(), value.toJson()),
-      ),
+      'enableCloudMusicPreBuffer': enableCloudMusicPreBuffer,
+      'preBufferCloudCount': preBufferCloudCount,
+      'cloudMusicDownloadPath': cloudMusicDownloadPath,
     };
   }
   
@@ -119,91 +93,29 @@ class AppSettings {
     AppThemeMode? themeMode,
     ThemeColor? themeColor,
     String? fontFamily,
+    int? customColor,
     bool? enableFadeEffect,
     int? fadeInDuration,
     int? fadeOutDuration,
     double? volume,
     bool? isMuted,
-    Map<ShortcutAction, HotKey>? shortcuts,
+    bool? enableCloudMusicPreBuffer,
+    int? preBufferCloudCount,
+    String? cloudMusicDownloadPath,
   }) {
     return AppSettings(
       themeMode: themeMode ?? this.themeMode,
       themeColor: themeColor ?? this.themeColor,
       fontFamily: fontFamily ?? this.fontFamily,
+      customColor: customColor ?? this.customColor,
       enableFadeEffect: enableFadeEffect ?? this.enableFadeEffect,
       fadeInDuration: fadeInDuration ?? this.fadeInDuration,
       fadeOutDuration: fadeOutDuration ?? this.fadeOutDuration,
       volume: volume ?? this.volume,
       isMuted: isMuted ?? this.isMuted,
-      shortcuts: shortcuts ?? Map.from(this.shortcuts),
+      enableCloudMusicPreBuffer: enableCloudMusicPreBuffer ?? this.enableCloudMusicPreBuffer,
+      preBufferCloudCount: preBufferCloudCount ?? this.preBufferCloudCount,
+      cloudMusicDownloadPath: cloudMusicDownloadPath ?? this.cloudMusicDownloadPath,
     );
   }
-}
-
-// 热键模型
-class HotKey {
-  final LogicalKeyboardKey key;
-  final bool ctrl;
-  final bool alt;
-  final bool shift;
-  
-  HotKey(
-    this.key, {
-    this.ctrl = false,
-    this.alt = false,
-    this.shift = false,
-  });
-  
-  // 从JSON创建热键
-  factory HotKey.fromJson(Map<String, dynamic> json) {
-    return HotKey(
-      LogicalKeyboardKey(json['key']),
-      ctrl: json['ctrl'] ?? false,
-      alt: json['alt'] ?? false,
-      shift: json['shift'] ?? false,
-    );
-  }
-  
-  // 转换为JSON
-  Map<String, dynamic> toJson() {
-    return {
-      'key': key.keyId,
-      'ctrl': ctrl,
-      'alt': alt,
-      'shift': shift,
-    };
-  }
-  
-  // 获取热键的显示文本
-  String get displayText {
-    final List<String> parts = [];
-    if (ctrl) parts.add('Ctrl');
-    if (alt) parts.add('Alt');
-    if (shift) parts.add('Shift');
-    
-    String keyName = key.keyLabel;
-    if (keyName.isEmpty) {
-      // 处理特殊按键
-      if (key == LogicalKeyboardKey.space) {
-        keyName = 'Space';
-      } else if (key == LogicalKeyboardKey.arrowUp) {
-        keyName = '↑';
-      } else if (key == LogicalKeyboardKey.arrowDown) {
-        keyName = '↓';
-      } else if (key == LogicalKeyboardKey.arrowLeft) {
-        keyName = '←';
-      } else if (key == LogicalKeyboardKey.arrowRight) {
-        keyName = '→';
-      } else {
-        // 尝试从keyId获取名称
-        keyName = key.debugName?.split('.').last ?? 'Unknown';
-      }
-    }
-    
-    parts.add(keyName);
-    return parts.join(' + ');
-  }
-  
-  @override
-  String toString() => displayText;
 } 

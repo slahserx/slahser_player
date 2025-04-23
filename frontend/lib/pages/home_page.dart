@@ -57,6 +57,10 @@ class _HomePageState extends State<HomePage> with WindowListener {
   // 存储当前选中的专辑信息
   String? _selectedAlbumName;
   String? _selectedAlbumArtist;
+  
+  // 云音乐相关状态
+  bool _isCloudContent = false;
+  String? _selectedCloudId;
 
   @override
   void initState() {
@@ -100,6 +104,16 @@ class _HomePageState extends State<HomePage> with WindowListener {
       if (contentType != ContentType.playlist) {
         _selectedPlaylistId = null;
       }
+      
+      // 如果切换到了云音乐相关页面，设置标记
+      _isCloudContent = [
+        ContentType.cloudMusic,
+        ContentType.cloudMusicSettings,
+        ContentType.cloudArtists,
+        ContentType.cloudAlbums,
+        ContentType.cloudArtistDetail,
+        ContentType.cloudAlbumDetail
+      ].contains(contentType);
     });
   }
 
@@ -107,6 +121,7 @@ class _HomePageState extends State<HomePage> with WindowListener {
     setState(() {
       _selectedContentType = ContentType.playlist;
       _selectedPlaylistId = playlistId;
+      _isCloudContent = false;
     });
   }
 
@@ -114,6 +129,7 @@ class _HomePageState extends State<HomePage> with WindowListener {
     setState(() {
       _selectedContentType = ContentType.artistDetail;
       _selectedArtistName = artistName;
+      _isCloudContent = false;
     });
   }
 
@@ -122,6 +138,26 @@ class _HomePageState extends State<HomePage> with WindowListener {
       _selectedContentType = ContentType.albumDetail;
       _selectedAlbumName = albumName;
       _selectedAlbumArtist = artistName;
+      _isCloudContent = false;
+    });
+  }
+  
+  void _handleCloudArtistSelected(String artistName, String artistId) {
+    setState(() {
+      _selectedContentType = ContentType.cloudArtistDetail;
+      _selectedArtistName = artistName;
+      _selectedCloudId = artistId;
+      _isCloudContent = true;
+    });
+  }
+  
+  void _handleCloudAlbumSelected(String albumName, String artistName, String albumId) {
+    setState(() {
+      _selectedContentType = ContentType.cloudAlbumDetail;
+      _selectedAlbumName = albumName;
+      _selectedAlbumArtist = artistName;
+      _selectedCloudId = albumId;
+      _isCloudContent = true;
     });
   }
 
@@ -214,36 +250,65 @@ class _HomePageState extends State<HomePage> with WindowListener {
                                 _handleAlbumSelected(notification.albumName, notification.artistName);
                                 return true;
                               },
-                              child: NotificationListener<ContentTypeChangedNotification>(
+                              child: NotificationListener<CloudArtistSelectedNotification>(
                                 onNotification: (notification) {
-                                  // 处理内容类型切换通知
-                                  setState(() {
-                                    _selectedContentType = notification.contentType;
-                                    // 如果不是歌单详情，清空选中的歌单ID
-                                    if (notification.contentType != ContentType.playlist) {
-                                      _selectedPlaylistId = null;
-                                    }
-                                    // 如果不是艺术家详情，清空选中的艺术家
-                                    if (notification.contentType != ContentType.artistDetail) {
-                                      _selectedArtistName = null;
-                                    }
-                                    // 如果不是专辑详情，清空选中的专辑
-                                    if (notification.contentType != ContentType.albumDetail) {
-                                      _selectedAlbumName = null;
-                                      _selectedAlbumArtist = null;
-                                    }
-                                  });
+                                  // 处理云音乐艺术家选择通知
+                                  _handleCloudArtistSelected(notification.artistName, notification.artistId);
                                   return true;
                                 },
-                                child: AnimatedSwitcher(
-                                  duration: const Duration(milliseconds: 300),
-                                  child: ContentAreaWrapper(
-                                    key: ValueKey<ContentType>(_selectedContentType),
-                                    selectedContentType: _selectedContentType,
-                                    selectedPlaylistId: _selectedPlaylistId,
-                                    selectedArtistName: _selectedArtistName,
-                                    selectedAlbumName: _selectedAlbumName,
-                                    selectedAlbumArtist: _selectedAlbumArtist,
+                                child: NotificationListener<CloudAlbumSelectedNotification>(
+                                  onNotification: (notification) {
+                                    // 处理云音乐专辑选择通知
+                                    _handleCloudAlbumSelected(notification.albumName, notification.artistName, notification.albumId);
+                                    return true;
+                                  },
+                                  child: NotificationListener<ContentTypeChangedNotification>(
+                                    onNotification: (notification) {
+                                      // 处理内容类型切换通知
+                                      setState(() {
+                                        _selectedContentType = notification.contentType;
+                                        
+                                        // 检查是否是云音乐相关内容
+                                        _isCloudContent = [
+                                          ContentType.cloudMusic,
+                                          ContentType.cloudMusicSettings,
+                                          ContentType.cloudArtists,
+                                          ContentType.cloudAlbums,
+                                          ContentType.cloudArtistDetail,
+                                          ContentType.cloudAlbumDetail
+                                        ].contains(notification.contentType);
+                                        
+                                        // 如果不是歌单详情，清空选中的歌单ID
+                                        if (notification.contentType != ContentType.playlist) {
+                                          _selectedPlaylistId = null;
+                                        }
+                                        // 如果不是艺术家详情，清空选中的艺术家
+                                        if (notification.contentType != ContentType.artistDetail &&
+                                            notification.contentType != ContentType.cloudArtistDetail) {
+                                          _selectedArtistName = null;
+                                        }
+                                        // 如果不是专辑详情，清空选中的专辑
+                                        if (notification.contentType != ContentType.albumDetail &&
+                                            notification.contentType != ContentType.cloudAlbumDetail) {
+                                          _selectedAlbumName = null;
+                                          _selectedAlbumArtist = null;
+                                        }
+                                      });
+                                      return true;
+                                    },
+                                    child: AnimatedSwitcher(
+                                      duration: const Duration(milliseconds: 300),
+                                      child: ContentAreaWrapper(
+                                        key: ValueKey<ContentType>(_selectedContentType),
+                                        selectedContentType: _selectedContentType,
+                                        selectedPlaylistId: _selectedPlaylistId,
+                                        selectedArtistName: _selectedArtistName,
+                                        selectedAlbumName: _selectedAlbumName,
+                                        selectedAlbumArtist: _selectedAlbumArtist,
+                                        isCloudContent: _isCloudContent,
+                                        selectedCloudId: _selectedCloudId,
+                                      ),
+                                    ),
                                   ),
                                 ),
                               ),

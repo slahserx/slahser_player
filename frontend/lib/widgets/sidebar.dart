@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:slahser_player/models/playlist.dart';
 import 'package:slahser_player/services/playlist_service.dart';
+import 'package:slahser_player/services/subsonic_service.dart';
 import 'package:slahser_player/enums/content_type.dart';
 
 class Sidebar extends StatefulWidget {
@@ -108,6 +109,23 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
           
           const SizedBox(height: 16),
           
+          // 本地音乐分类标题
+          if (!_isCollapsed) 
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  '本地音乐',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+                  ),
+                ),
+              ),
+            ),
+          
           // 核心导航项
           _buildMenuItem(
             context,
@@ -137,6 +155,31 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
           
           // 歌单列表
           if (!_isCollapsed) _buildPlaylistsList(context),
+          
+          // 云音乐标题
+          if (!_isCollapsed)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  '云音乐',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+                  ),
+                ),
+              ),
+            ),
+            
+          // 云音乐菜单
+          _buildMenuItem(
+            context,
+            icon: Icons.cloud_queue,
+            title: 'Subsonic',
+            contentType: ContentType.cloudMusic,
+          ),
           
           const Spacer(),
           
@@ -171,7 +214,19 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
   }) {
     final isSelected = widget.selectedContentType == contentType ||
         (contentType == ContentType.playlists && 
-         widget.selectedContentType == ContentType.playlist);
+         widget.selectedContentType == ContentType.playlist) ||
+        (contentType == ContentType.cloudMusic &&
+         [ContentType.cloudMusic, ContentType.cloudMusicSettings,
+          ContentType.cloudArtists, ContentType.cloudAlbums,
+          ContentType.cloudArtistDetail, ContentType.cloudAlbumDetail]
+             .contains(widget.selectedContentType));
+    
+    // 对于云音乐菜单项，检查连接状态
+    final bool isCloudItem = contentType == ContentType.cloudMusic;
+    final subsonicService = isCloudItem 
+        ? Provider.of<SubsonicService>(context) 
+        : null;
+    final bool isConnected = subsonicService?.isConnected ?? false;
     
     return HoverWidget(
       builder: (context, isHovered) {
@@ -216,10 +271,29 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
                     ? MainAxisAlignment.center 
                     : MainAxisAlignment.start,
                 children: [
-                  Icon(
-                    icon,
-                    color: iconColor,
-                    size: 20,
+                  Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      Icon(
+                        icon,
+                        color: iconColor,
+                        size: 20,
+                      ),
+                      // 为云音乐菜单项添加连接状态指示
+                      if (isCloudItem && !_isCollapsed)
+                        Positioned(
+                          right: -3,
+                          top: -3,
+                          child: Container(
+                            width: 8,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              color: isConnected ? Colors.green : Colors.grey,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                   if (!_isCollapsed) ...[
                     const SizedBox(width: 12),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:slahser_player/services/playlist_service.dart';
 import 'package:slahser_player/services/music_library_service.dart';
+import 'package:slahser_player/services/subsonic_service.dart';
 import 'package:slahser_player/widgets/content/all_music_view.dart';
 import 'package:slahser_player/widgets/settings_panel.dart';
 import 'package:slahser_player/widgets/playlist_view.dart';
@@ -10,9 +11,14 @@ import 'package:slahser_player/widgets/content/artists_view.dart';
 import 'package:slahser_player/widgets/content/playlists_view.dart';
 import 'package:slahser_player/widgets/content/artist_detail_view.dart';
 import 'package:slahser_player/widgets/content/album_detail_view.dart';
+import 'package:slahser_player/widgets/content/cloud_music_view.dart';
+import 'package:slahser_player/widgets/content/cloud_search_view.dart';
 import 'package:slahser_player/widgets/content/notifications.dart';
 import 'package:slahser_player/utils/page_transitions.dart';
 import '../../enums/content_type.dart';
+import 'package:slahser_player/widgets/content/cloud_album_detail_view.dart';
+import 'package:slahser_player/widgets/content/cloud_album_list_view.dart';
+import 'package:slahser_player/providers/app_state.dart';
 
 /// 应用程序的主要内容区域包装器
 class ContentAreaWrapper extends StatelessWidget {
@@ -31,6 +37,12 @@ class ContentAreaWrapper extends StatelessWidget {
   /// 当前选择的专辑艺术家
   final String? selectedAlbumArtist;
   
+  /// 是否是云音乐（用于区分本地和远程内容）
+  final bool isCloudContent;
+  
+  /// 选中的云音乐ID
+  final String? selectedCloudId;
+  
   const ContentAreaWrapper({
     super.key,
     required this.selectedContentType,
@@ -38,6 +50,8 @@ class ContentAreaWrapper extends StatelessWidget {
     this.selectedArtistName,
     this.selectedAlbumName,
     this.selectedAlbumArtist,
+    this.isCloudContent = false,
+    this.selectedCloudId,
   });
   
   @override
@@ -170,6 +184,54 @@ class ContentAreaWrapper extends StatelessWidget {
         content = ContentAreaTransition(
           appearing: true,
           child: const SettingsPanel(),
+        );
+        break;
+      case ContentType.cloudMusic:
+        content = ContentAreaTransition(
+          appearing: true,
+          child: const CloudMusicView(),
+        );
+        break;
+      case ContentType.cloudMusicSettings:
+        // 已将云音乐设置整合到设置面板中
+        content = ContentAreaTransition(
+          appearing: true,
+          child: const SettingsPanel(),
+        );
+        break;
+      case ContentType.cloudArtists:
+        // 这里会添加云音乐艺术家视图
+        content = const Center(child: Text('云音乐艺术家视图'));
+        break;
+      case ContentType.cloudAlbums:
+        // 这里会添加云音乐专辑视图
+        content = const Center(child: Text('云音乐专辑视图'));
+        break;
+      case ContentType.cloudArtistDetail:
+        // 这里会添加云音乐艺术家详情视图
+        content = const Center(child: Text('云音乐艺术家详情'));
+        break;
+      case ContentType.cloudAlbumDetail:
+        // 获取专辑ID、名称和艺术家
+        final albumData = Provider.of<AppState>(context, listen: false).cloudAlbumData;
+        if (albumData != null) {
+          content = CloudAlbumDetailView(
+            albumId: albumData.id,
+            albumName: albumData.name,
+            artist: albumData.artist,
+          );
+        } else {
+          content = const Center(child: Text('未找到专辑信息'));
+        }
+        break;
+      case ContentType.cloudAlbumList:
+        // 显示云音乐专辑列表视图
+        content = const CloudAlbumListView();
+        break;
+      case ContentType.cloudSearchResult:
+        content = ContentAreaTransition(
+          appearing: true,
+          child: const CloudSearchView(),
         );
         break;
       default:

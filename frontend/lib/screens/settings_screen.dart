@@ -176,14 +176,61 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                     const SizedBox(height: 16),
                     
-                    FutureBuilder<String>(
-                      future: musicLibraryService.getCacheSize(),
+                    FutureBuilder<Map<CacheType, String>>(
+                      future: musicLibraryService.getAllCacheSizes(),
                       builder: (context, snapshot) {
-                        return ListTile(
-                          title: const Text('缓存大小'),
-                          subtitle: Text(snapshot.data ?? '计算中...'),
-                          leading: const Icon(Icons.storage),
-                          dense: true,
+                        if (!snapshot.hasData) {
+                          return const ListTile(
+                            title: Text('缓存大小'),
+                            subtitle: Text('计算中...'),
+                            leading: Icon(Icons.storage),
+                            dense: true,
+                          );
+                        }
+                        
+                        final cacheSizes = snapshot.data!;
+                        
+                        return Column(
+                          children: [
+                            ListTile(
+                              title: const Text('总缓存大小'),
+                              subtitle: Text(cacheSizes[CacheType.all] ?? '0 KB'),
+                              leading: const Icon(Icons.storage),
+                              dense: true,
+                            ),
+                            
+                            ExpansionTile(
+                              title: const Text('缓存详情'),
+                              leading: const Icon(Icons.folder),
+                              tilePadding: const EdgeInsets.symmetric(horizontal: 16),
+                              children: [
+                                ListTile(
+                                  title: const Text('封面缓存'),
+                                  subtitle: Text(cacheSizes[CacheType.cover] ?? '0 KB'),
+                                  leading: const Icon(Icons.image),
+                                  dense: true,
+                                ),
+                                ListTile(
+                                  title: const Text('元数据缓存'),
+                                  subtitle: Text(cacheSizes[CacheType.metadata] ?? '0 KB'),
+                                  leading: const Icon(Icons.audiotrack),
+                                  dense: true,
+                                ),
+                                ListTile(
+                                  title: const Text('歌词缓存'),
+                                  subtitle: Text(cacheSizes[CacheType.lyrics] ?? '0 KB'),
+                                  leading: const Icon(Icons.lyrics),
+                                  dense: true,
+                                ),
+                                ListTile(
+                                  title: const Text('云音乐缓存'),
+                                  subtitle: Text(cacheSizes[CacheType.cloudMusic] ?? '0 KB'),
+                                  leading: const Icon(Icons.cloud_download),
+                                  dense: true,
+                                ),
+                              ],
+                            ),
+                          ],
                         );
                       },
                     ),
@@ -216,6 +263,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         if (mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(content: Text('元数据缓存已清理')),
+                          );
+                          // 刷新界面
+                          setState(() {});
+                        }
+                      },
+                      dense: true,
+                    ),
+                    
+                    ListTile(
+                      title: const Text('清理歌词缓存'),
+                      subtitle: const Text('删除所有缓存的歌词数据'),
+                      leading: const Icon(Icons.lyrics),
+                      onTap: () async {
+                        await MusicCacheManager().clearCache(CacheType.lyrics);
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('歌词缓存已清理')),
+                          );
+                          // 刷新界面
+                          setState(() {});
+                        }
+                      },
+                      dense: true,
+                    ),
+                    
+                    ListTile(
+                      title: const Text('清理云音乐缓存'),
+                      subtitle: const Text('删除所有缓存的云音乐文件'),
+                      leading: const Icon(Icons.cloud_download),
+                      onTap: () async {
+                        await MusicCacheManager().clearCache(CacheType.cloudMusic);
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('云音乐缓存已清理')),
                           );
                           // 刷新界面
                           setState(() {});

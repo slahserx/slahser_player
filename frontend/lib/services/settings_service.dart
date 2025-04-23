@@ -26,10 +26,16 @@ class SettingsService extends ChangeNotifier {
     ThemeColor.purple: const Color(0xFF9C27B0),
     ThemeColor.orange: const Color(0xFFFF9800),
     ThemeColor.red: const Color(0xFFF44336),
+    ThemeColor.custom: const Color(0xFF1DB954), // 自定义颜色的占位值，实际会被覆盖
   };
   
   // 获取当前主题颜色
-  Color get currentThemeColor => themeColorMap[_settings.themeColor]!;
+  Color get currentThemeColor {
+    if (_settings.themeColor == ThemeColor.custom) {
+      return Color(_settings.customColor);
+    }
+    return themeColorMap[_settings.themeColor]!;
+  }
   
   // 获取当前主题模式
   ThemeMode get currentThemeMode {
@@ -179,6 +185,19 @@ class SettingsService extends ChangeNotifier {
     notifyListeners();
   }
   
+  // 更新自定义颜色
+  Future<void> updateCustomColor(Color color) async {
+    if (_settings.customColor == color.value && _settings.themeColor == ThemeColor.custom) return;
+    
+    _settings = _settings.copyWith(
+      customColor: color.value,
+      themeColor: ThemeColor.custom
+    );
+    await _saveSettings();
+    debugPrint('自定义颜色已更新为: ${color.value.toRadixString(16)}');
+    notifyListeners();
+  }
+  
   // 更新字体
   Future<void> updateFontFamily(String fontFamily) async {
     _settings = _settings.copyWith(fontFamily: fontFamily);
@@ -210,16 +229,6 @@ class SettingsService extends ChangeNotifier {
     notifyListeners();
   }
   
-  // 更新快捷键
-  Future<void> updateShortcut(ShortcutAction action, HotKey hotKey) async {
-    final newShortcuts = Map<ShortcutAction, HotKey>.from(_settings.shortcuts);
-    newShortcuts[action] = hotKey;
-    
-    _settings = _settings.copyWith(shortcuts: newShortcuts);
-    await _saveSettings();
-    notifyListeners();
-  }
-  
   // 重置所有设置
   Future<void> resetSettings() async {
     _settings = AppSettings();
@@ -240,6 +249,18 @@ class SettingsService extends ChangeNotifier {
     _settings = _settings.copyWith(isMuted: isMuted);
     await _saveSettings();
     notifyListeners();
+  }
+  
+  // 更新云音乐下载路径
+  Future<void> updateCloudMusicDownloadPath(String path) async {
+    _settings = _settings.copyWith(cloudMusicDownloadPath: path);
+    await _saveSettings();
+    notifyListeners();
+  }
+  
+  // 获取云音乐下载路径
+  String getCloudMusicDownloadPath() {
+    return _settings.cloudMusicDownloadPath;
   }
   
   // 获取当前设置

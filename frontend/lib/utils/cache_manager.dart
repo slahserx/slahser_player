@@ -6,7 +6,7 @@ import 'package:crypto/crypto.dart';
 import 'package:path_provider/path_provider.dart';
 
 /// 音乐应用缓存管理器
-/// 负责管理音乐文件元数据、图片和歌词的缓存
+/// 负责管理音乐文件元数据、图片、歌词和云音乐的缓存
 class MusicCacheManager {
   static final MusicCacheManager _instance = MusicCacheManager._internal();
   factory MusicCacheManager() => _instance;
@@ -15,9 +15,11 @@ class MusicCacheManager {
   
   // 缓存目录路径
   String? _baseCachePath;
+  String? _dataCachePath; // 新增总数据缓存目录
   String? _coverCachePath;
   String? _metadataCachePath;
   String? _lyricsCachePath;
+  String? _cloudMusicCachePath;
   
   // 内存缓存
   final Map<String, List<int>> _coverMemoryCache = {};
@@ -33,25 +35,115 @@ class MusicCacheManager {
       final tempDir = await getApplicationDocumentsDirectory();
       _baseCachePath = '${tempDir.path}/slahser_player_cache';
       
-      _coverCachePath = '$_baseCachePath/covers';
-      _metadataCachePath = '$_baseCachePath/metadata';
-      _lyricsCachePath = '$_baseCachePath/lyrics';
+      // 创建总数据缓存目录
+      _dataCachePath = '$_baseCachePath/data';
       
-      // 创建缓存目录
+      // 所有缓存数据放在data子目录下
+      _coverCachePath = '$_dataCachePath/covers';
+      _metadataCachePath = '$_dataCachePath/metadata';
+      _lyricsCachePath = '$_dataCachePath/lyrics';
+      _cloudMusicCachePath = '$_dataCachePath/cloud_music';
+      
+      // 创建缓存目录结构
       _createDirectory(_baseCachePath!);
+      _createDirectory(_dataCachePath!);
       _createDirectory(_coverCachePath!);
       _createDirectory(_metadataCachePath!);
       _createDirectory(_lyricsCachePath!);
+      _createDirectory(_cloudMusicCachePath!);
+      
+      // 检查并迁移旧缓存
+      await _migrateOldCache();
       
       // 清理过期缓存
       _cleanExpiredCache();
       
       debugPrint('缓存管理器初始化完成，路径: $_baseCachePath');
+      debugPrint('数据缓存路径: $_dataCachePath');
     } catch (e) {
       debugPrint('初始化缓存管理器失败: $e');
     }
   }
   
+  // 迁移旧版本的缓存到新目录结构
+  Future<void> _migrateOldCache() async {
+    try {
+      // 检查旧版本的缓存目录
+      final oldCoverPath = '$_baseCachePath/covers';
+      final oldMetadataPath = '$_baseCachePath/metadata';
+      final oldLyricsPath = '$_baseCachePath/lyrics';
+      final oldCloudMusicPath = '$_baseCachePath/cloud_music';
+      
+      // 迁移封面缓存
+      await _migrateDirectory(oldCoverPath, _coverCachePath!);
+      
+      // 迁移元数据缓存
+      await _migrateDirectory(oldMetadataPath, _metadataCachePath!);
+      
+      // 迁移歌词缓存
+      await _migrateDirectory(oldLyricsPath, _lyricsCachePath!);
+      
+      // 迁移云音乐缓存
+      await _migrateDirectory(oldCloudMusicPath, _cloudMusicCachePath!);
+      
+      debugPrint('缓存迁移完成');
+    } catch (e) {
+      debugPrint('迁移旧缓存失败: $e');
+    }
+  }
+  
+  // 从旧目录迁移文件到新目录
+  Future<void> _migrateDirectory(String oldPath, String newPath) async {
+    final oldDir = Directory(oldPath);
+    
+    // 如果旧目录不存在，直接返回
+    if (!await oldDir.exists()) {
+      return;
+    }
+    
+    debugPrint('迁移缓存从 $oldPath 到 $newPath');
+    
+    try {
+      // 创建新目录（如果不存在）
+      final newDir = Directory(newPath);
+      if (!await newDir.exists()) {
+        await newDir.create(recursive: true);
+      }
+      
+      // 复制文件到新目录
+      await for (final entity in oldDir.list()) {
+        if (entity is File) {
+          final fileName = path.basename(entity.path);
+          final newFilePath = path.join(newPath, fileName);
+          
+          // 如果新目录中不存在该文件，则复制
+          if (!await File(newFilePath).exists()) {
+            await entity.copy(newFilePath);
+            debugPrint('已迁移文件: $fileName');
+          }
+        }
+      }
+      
+      // 删除旧目录
+      await oldDir.delete(recursive: true);
+      debugPrint('已删除旧缓存目录: $oldPath');
+    } catch (e) {
+      debugPrint('迁移目录失败 $oldPath: $e');
+    }
+  }
+  
+  // 获取云音乐缓存路径
+  String? getCloudMusicCachePath() {
+    return _cloudMusicCachePath;
+  }
+
+  // 清理云音乐缓存目录
+  Future<void> clearCloudMusicCache() async {
+    if (_cloudMusicCachePath == null) await initialize();
+    await _clearDirectory(_cloudMusicCachePath!);
+    debugPrint('云音乐缓存已清理');
+  }
+
   // 创建目录
   void _createDirectory(String dirPath) {
     final dir = Directory(dirPath);
@@ -308,16 +400,20 @@ class MusicCacheManager {
           _lyricsMemoryCache.clear();
           await _clearDirectory(_lyricsCachePath!);
           break;
+        case CacheType.cloudMusic:
+          await _clearDirectory(_cloudMusicCachePath!);
+          break;
         case CacheType.all:
           _coverMemoryCache.clear();
           _metadataMemoryCache.clear();
           _lyricsMemoryCache.clear();
-          await _clearDirectory(_baseCachePath!);
+          await _clearDirectory(_dataCachePath!);
           
           // 重建目录结构
           _createDirectory(_coverCachePath!);
           _createDirectory(_metadataCachePath!);
           _createDirectory(_lyricsCachePath!);
+          _createDirectory(_cloudMusicCachePath!);
           break;
       }
       
@@ -354,8 +450,11 @@ class MusicCacheManager {
         case CacheType.lyrics:
           totalSize = await _getDirectorySize(_lyricsCachePath!);
           break;
+        case CacheType.cloudMusic:
+          totalSize = await _getDirectorySize(_cloudMusicCachePath!);
+          break;
         case CacheType.all:
-          totalSize = await _getDirectorySize(_baseCachePath!);
+          totalSize = await _getDirectorySize(_dataCachePath!);
           break;
       }
     } catch (e) {
@@ -393,6 +492,7 @@ class MusicCacheManager {
       await _cleanOldFilesInDirectory(_coverCachePath!, oneWeekAgo);
       await _cleanOldFilesInDirectory(_metadataCachePath!, oneWeekAgo);
       await _cleanOldFilesInDirectory(_lyricsCachePath!, oneWeekAgo);
+      await _cleanOldFilesInDirectory(_cloudMusicCachePath!, oneWeekAgo);
       
       debugPrint('已清理过期缓存文件');
     } catch (e) {
@@ -437,6 +537,8 @@ enum CacheType {
   metadata,
   /// 歌词缓存
   lyrics,
+  /// 云音乐缓存
+  cloudMusic,
   /// 所有缓存
   all,
 } 

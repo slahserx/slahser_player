@@ -41,7 +41,7 @@ dependencies:
   # 本地存储
   shared_preferences: ^2.2.2
   # 文件选择
-  file_picker: ^6.1.1
+  file_picker: ^10.1.2
   # 主题
   flutter_colorpicker: ^1.0.3
   # 国际化
@@ -72,6 +72,8 @@ dependencies:
   crypto: ^3.0.3
   id3: ^1.0.2
   metadata_god: ^1.0.0
+  msix: ^3.16.8
+  flutter_launcher_icons: ^0.14.3
 
 dev_dependencies:
   flutter_test:
@@ -125,3 +127,27 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+# 添加flutter_launcher_icons配置
+flutter_launcher_icons:
+  windows:
+    generate: true
+    image_path: "assets/icons/logo.png"
+    icon_size: 256 # 可选，默认为48
+  web:
+    generate: true
+    image_path: "assets/icons/logo.png"
+    background_color: "#43a047"
+    theme_color: "#43a047"
+  macos:
+    generate: true
+    image_path: "assets/icons/logo.png"
+
+# 添加MSIX配置
+msix_config:
+  display_name: Slahser Player
+  publisher_display_name: Slahser Team
+  identity_name: com.slahser.player
+  msix_version: 1.0.0.0
+  logo_path: assets/icons/logo.png
+  capabilities: internetClient

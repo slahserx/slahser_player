@@ -7,11 +7,29 @@ import 'package:slahser_player/services/audio_player_service.dart';
 import 'package:slahser_player/services/settings_service.dart';
 import 'package:slahser_player/services/playlist_service.dart';
 import 'package:slahser_player/services/update_service.dart';
+import 'package:slahser_player/services/subsonic_service.dart';
 import 'package:slahser_player/theme/app_theme.dart';
+import 'package:slahser_player/providers/app_state.dart';
 import 'utils/cache_manager.dart';
+import 'package:flutter/foundation.dart';
+
+// 设置网络连接并发数，优化网络性能
+void _configureGlobalSettings() {
+  // 设置Flutter HTTP客户端最大连接数
+  PlatformDispatcher.instance.onError = (error, stack) {
+    debugPrint('全局错误: $error');
+    return true;
+  };
+  
+  // 启用HTTP2
+  // 无法直接在Flutter中设置，可能需要使用dio或自定义HTTP客户端
+}
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // 配置全局设置
+  _configureGlobalSettings();
   
   // 初始化窗口管理器
   await windowManager.ensureInitialized();
@@ -58,6 +76,9 @@ Future<void> main() async {
   // 初始化更新服务
   final updateService = UpdateService();
   
+  // 初始化云音乐服务
+  final subsonicService = SubsonicService();
+  
   // 初始化缓存管理器
   await MusicCacheManager().initialize();
   
@@ -70,6 +91,8 @@ Future<void> main() async {
         ChangeNotifierProvider.value(value: musicLibraryService),
         ChangeNotifierProvider.value(value: playlistService),
         ChangeNotifierProvider.value(value: updateService),
+        ChangeNotifierProvider.value(value: subsonicService),
+        ChangeNotifierProvider(create: (_) => AppState()),
       ],
       child: const MyApp(),
     ),

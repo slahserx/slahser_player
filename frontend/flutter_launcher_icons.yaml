@@ -1,0 +1,13 @@
+flutter_launcher_icons:
+  windows:
+    generate: true
+    image_path: "assets/icons/logo.png"
+    icon_size: 256 # 可选，默认为48
+  web:
+    generate: true
+    image_path: "assets/icons/logo.png"
+    background_color: "#hexcode"
+    theme_color: "#hexcode"
+  macos:
+    generate: true
+    image_path: "assets/icons/logo.png" 

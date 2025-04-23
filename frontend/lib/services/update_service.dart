@@ -36,6 +36,19 @@ class UpdateService extends ChangeNotifier {
   AppVersion? _latestVersion;
   AppVersion? get latestVersion => _latestVersion;
   
+  // 当前版本信息
+  AppVersion get currentVersion => AppVersion.current;
+  
+  // 是否有更新可用
+  bool get updateAvailable => _status == UpdateStatus.available;
+  
+  // 是否正在检查更新
+  bool get isChecking => _status == UpdateStatus.checking;
+  
+  // 上次检查更新时间
+  DateTime? _lastChecked;
+  DateTime? get lastChecked => _lastChecked;
+  
   // 下载进度（0-100）
   double _downloadProgress = 0;
   double get downloadProgress => _downloadProgress;
@@ -193,6 +206,8 @@ class UpdateService extends ChangeNotifier {
       debugPrint('检查更新出错: $_errorMessage');
     }
 
+    // 更新检查时间
+    _lastChecked = DateTime.now();
     notifyListeners();
   }
   

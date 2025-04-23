@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'dart:convert';
 import 'dart:math';
+import 'dart:async';
 import 'package:path/path.dart' as path;
 import 'package:uuid/uuid.dart';
 import 'package:flutter_media_metadata/flutter_media_metadata.dart';
@@ -9,6 +10,7 @@ import 'package:flutter/foundation.dart';
 import 'package:gbk_codec/gbk_codec.dart';
 import 'package:slahser_player/services/file_service.dart';
 import 'package:crypto/crypto.dart';
+import 'package:http/http.dart' as http;
 import '../utils/media_parser.dart';
 import '../utils/cache_manager.dart';
 
@@ -22,6 +24,7 @@ class MusicFile {
   final String album;
   final String? lyricsPath;
   final String? coverPath;
+  final String? coverUrl;  // 新增：封面URL（用于远程音乐）
   final Duration duration;
   List<int>? embeddedCoverBytes;
   List<String>? embeddedLyrics; // 存储内嵌歌词
@@ -35,6 +38,7 @@ class MusicFile {
   bool isFavorite;
   int playCount;
   DateTime? lastPlayed;
+  bool isRemote; // 新增：是否为远程音乐
   
   MusicFile({
     required this.id,
@@ -46,6 +50,7 @@ class MusicFile {
     required this.album,
     this.lyricsPath,
     this.coverPath,
+    this.coverUrl,
     required this.duration,
     this.embeddedCoverBytes,
     this.embeddedLyrics,
@@ -59,16 +64,43 @@ class MusicFile {
     this.isFavorite = false,
     this.playCount = 0,
     this.lastPlayed,
+    this.isRemote = false,
   });
   
   // 获取封面图片数据
   Future<List<int>?> getCoverBytes() async {
+    // 如果已经有缓存的封面数据，直接返回
     if (embeddedCoverBytes != null && embeddedCoverBytes!.isNotEmpty) {
       return embeddedCoverBytes;
     }
     
+    // 对于远程音乐，从URL获取封面数据
+    if (isRemote && coverUrl != null && coverUrl!.isNotEmpty) {
+      try {
+        debugPrint('🔍 从URL获取远程封面: $coverUrl');
+        final response = await http.get(Uri.parse(coverUrl!)).timeout(
+          const Duration(seconds: 10),
+          onTimeout: () {
+            throw TimeoutException('获取远程封面超时');
+          },
+        );
+        
+        if (response.statusCode == 200) {
+          embeddedCoverBytes = response.bodyBytes;
+          hasEmbeddedCover = true;
+          debugPrint('✅ 成功获取远程封面: ${embeddedCoverBytes!.length} 字节');
+          return embeddedCoverBytes;
+        } else {
+          debugPrint('❌ 获取远程封面失败，状态码: ${response.statusCode}');
+        }
+      } catch (e) {
+        debugPrint('❌ 获取远程封面错误: $e');
+      }
+      return null;
+    }
+    
     // 如果embeddedCoverBytes为空但hasEmbeddedCover为true，尝试重新解析
-    if (filePath != null) {
+    if (!isRemote && filePath.isNotEmpty) {
       try {
         debugPrint('🔍 尝试重新解析文件获取封面: $filePath');
         final coverBytes = await MediaParser.extractCoverImageFromFile(filePath);
@@ -275,6 +307,7 @@ class MusicFile {
       fileSize: fileSize,
       hasEmbeddedCover: hasEmbeddedCover,
       hasEmbeddedLyrics: hasEmbeddedLyrics,
+      isRemote: false,
     );
   }
   
@@ -289,6 +322,7 @@ class MusicFile {
     String? album,
     String? lyricsPath,
     String? coverPath,
+    String? coverUrl,
     Duration? duration,
     List<int>? embeddedCoverBytes,
     List<String>? embeddedLyrics,
@@ -302,6 +336,7 @@ class MusicFile {
     bool? isFavorite,
     int? playCount,
     DateTime? lastPlayed,
+    bool? isRemote,
   }) {
     return MusicFile(
       id: id ?? this.id,
@@ -313,6 +348,7 @@ class MusicFile {
       album: album ?? this.album,
       lyricsPath: lyricsPath ?? this.lyricsPath,
       coverPath: coverPath ?? this.coverPath,
+      coverUrl: coverUrl ?? this.coverUrl,
       duration: duration ?? this.duration,
       embeddedCoverBytes: embeddedCoverBytes ?? this.embeddedCoverBytes,
       embeddedLyrics: embeddedLyrics ?? this.embeddedLyrics,
@@ -326,6 +362,7 @@ class MusicFile {
       isFavorite: isFavorite ?? this.isFavorite,
       playCount: playCount ?? this.playCount,
       lastPlayed: lastPlayed ?? this.lastPlayed,
+      isRemote: isRemote ?? this.isRemote,
     );
   }
   
@@ -358,11 +395,13 @@ class MusicFile {
       'hasEmbeddedLyrics': hasEmbeddedLyrics,
       'isFavorite': isFavorite,
       'playCount': playCount,
+      'isRemote': isRemote,
     };
     
     // 添加可选字段（如果不为null）
     if (lyricsPath != null) json['lyricsPath'] = lyricsPath;
     if (coverPath != null) json['coverPath'] = coverPath;
+    if (coverUrl != null) json['coverUrl'] = coverUrl;
     if (trackNumber != null) json['trackNumber'] = trackNumber;
     if (year != null) json['year'] = year;
     if (genre != null) json['genre'] = genre;
@@ -464,6 +503,9 @@ class MusicFile {
     bool hasEmbeddedCover = json['hasEmbeddedCover'] ?? (coverBytes != null && coverBytes.isNotEmpty);
     bool hasEmbeddedLyrics = json['hasEmbeddedLyrics'] ?? (lyrics != null && lyrics.isNotEmpty);
     
+    // 是否为远程音乐
+    bool isRemote = json['isRemote'] ?? false;
+    
     // 创建MusicFile对象
     return MusicFile(
       id: id,
@@ -475,6 +517,7 @@ class MusicFile {
       album: album,
       lyricsPath: json['lyricsPath'],
       coverPath: json['coverPath'],
+      coverUrl: json['coverUrl'],
       duration: duration,
       embeddedCoverBytes: coverBytes,
       embeddedLyrics: lyrics,
@@ -488,6 +531,7 @@ class MusicFile {
       isFavorite: isFavorite,
       playCount: playCount,
       lastPlayed: lastPlayed,
+      isRemote: isRemote,
     );
   }
   
@@ -502,6 +546,6 @@ class MusicFile {
   
   @override
   String toString() {
-    return 'MusicFile{id: $id, title: $title, artist: $artist, album: $album}';
+    return 'MusicFile{id: $id, title: $title, artist: $artist, album: $album, isRemote: $isRemote}';
   }
 } 
