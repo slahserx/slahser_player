@@ -64,6 +64,20 @@ class UpdateService extends ChangeNotifier {
   // 历史版本列表，包含当前版本
   final List<AppVersion> _versionHistory = [
     AppVersion(
+      version: '1.0.0',
+      buildNumber: '60',
+      releaseDate: DateTime(2025, 3, 19),
+      changelog: [
+        '修复播放器控制栏封面图片闪烁问题',
+        '优化歌曲列表中封面图片的加载和缓存机制',
+        '改进图片过渡动画，使切换更加流畅',
+        '添加图片预加载功能，提前加载当前播放歌曲的前后封面',
+        '优化内存使用，减少频繁重绘导致的性能问题',
+        '修复了嵌入式封面图片在不同设备上的显示问题',
+        '提升整体用户界面响应速度和稳定性',
+      ],
+    ),
+    AppVersion(
       version: '0.9.1',
       buildNumber: '59',
       releaseDate: DateTime(2025, 3, 18),

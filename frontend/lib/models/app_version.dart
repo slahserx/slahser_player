@@ -20,7 +20,7 @@ class AppVersion {
 
   /// 当前应用版本
   static final AppVersion current = AppVersion(
-    version: '0.9.2',
+    version: '1.0.0',
     buildNumber: '60',
     releaseDate: DateTime(2025, 3, 19),
     changelog: [

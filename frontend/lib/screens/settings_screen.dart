@@ -4,6 +4,7 @@ import 'package:slahser_player/services/settings_service.dart';
 import 'package:slahser_player/services/music_library_service.dart';
 import 'package:slahser_player/theme/app_theme.dart';
 import '../utils/cache_manager.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({Key? key}) : super(key: key);
@@ -464,6 +465,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             Text('一款美观、简洁的本地音乐播放器，支持多种音频格式，提供丰富的功能和优美的界面。'),
                           ],
                         );
+                      },
+                      dense: true,
+                    ),
+                    
+                    ListTile(
+                      title: const Text('软件更新'),
+                      subtitle: const Text('点击前往下载页面获取最新版本'),
+                      leading: const Icon(Icons.cloud_download),
+                      trailing: OutlinedButton.icon(
+                        icon: const Icon(Icons.download),
+                        label: const Text('下载(密码:c5z0)'),
+                        onPressed: () async {
+                          // 尝试启动默认浏览器打开链接
+                          try {
+                            await launchUrl(Uri.parse('https://wwb.lanzoum.com/b002uuo6ed'));
+                          } catch (e) {
+                            // 如果无法打开浏览器，显示错误消息
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('无法打开链接，请手动复制网址')),
+                              );
+                            }
+                          }
+                        },
+                      ),
+                      onTap: () async {
+                        // 尝试启动默认浏览器打开链接
+                        try {
+                          await launchUrl(Uri.parse('https://wwb.lanzoum.com/b002uuo6ed'));
+                        } catch (e) {
+                          // 如果无法打开浏览器，显示错误消息
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('无法打开链接，请手动复制网址')),
+                            );
+                          }
+                        }
                       },
                       dense: true,
                     ),

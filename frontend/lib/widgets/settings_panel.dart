@@ -12,6 +12,7 @@ import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import 'dart:math';
 import 'package:slahser_player/utils/cache_manager.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class SettingsPanel extends StatefulWidget {
   const SettingsPanel({super.key});
@@ -1963,12 +1964,37 @@ class AboutSettingsTab extends StatelessWidget {
                 if (updateService.updateAvailable && updateService.latestVersion != null)
                   Padding(
                     padding: const EdgeInsets.only(top: 16.0),
-                    child: OutlinedButton.icon(
-                      icon: const Icon(Icons.download),
-                      label: const Text('下载更新'),
-                      onPressed: () {
-                        // 实现下载更新的逻辑
-                      },
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            icon: const Icon(Icons.download),
+                            label: const Text('GitHub下载'),
+                            onPressed: () {
+                              updateService.downloadUpdate();
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            icon: const Icon(Icons.cloud_download),
+                            label: const Text('蓝奏云下载(密码:c5z0)'),
+                            onPressed: () async {
+                              final lanZouUrl = 'https://wwb.lanzoum.com/b002uuo6ed';
+                              try {
+                                await launchUrl(Uri.parse(lanZouUrl));
+                              } catch (e) {
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('无法打开链接，请手动复制网址')),
+                                  );
+                                }
+                              }
+                            },
+                          ),
+                        ),
+                      ],
                     ),
                   ),
               ],
